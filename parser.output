@@ -1,0 +1,3136 @@
+Grammar
+
+    0 $accept: program $end
+
+    1 program: func_def
+
+    2 func_def: "def" header ':' def_list stmt_list "end"
+
+    3 def_list: func_def def_list
+    4         | func_decl def_list
+    5         | var_def def_list
+    6         | %empty
+
+    7 header: type T_id '(' formal_list ')'
+    8       | T_id '(' formal_list ')'
+
+    9 formal_list: formal formal_full
+   10            | %empty
+
+   11 formal_full: ';' formal formal_full
+   12            | %empty
+
+   13 formal: "ref" type id_list
+   14       | type id_list
+
+   15 id_list: T_id id_full
+
+   16 id_full: ',' T_id id_full
+   17        | %empty
+
+   18 type: "int"
+   19     | "bool"
+   20     | "char"
+   21     | type '[' ']'
+   22     | "list" '[' type ']'
+
+   23 func_decl: "decl" header
+
+   24 var_def: type id_list
+
+   25 stmt_list: stmt stmt_full
+
+   26 stmt_full: stmt stmt_full
+   27          | %empty
+
+   28 stmt: simple
+   29     | "exit"
+   30     | "return" expr
+   31     | if_clause
+   32     | "for" simple_list ';' expr ';' simple_list ':' stmt_list "end"
+
+   33 if_clause: "if" expr ':' stmt_list elsif_clause else_clause "end"
+
+   34 elsif_clause: "elsif" expr ':' stmt_list elsif_clause
+   35             | %empty
+
+   36 else_clause: "else" ':' stmt_list
+   37            | %empty
+
+   38 simple: "skip"
+   39       | atom ":=" expr
+   40       | call
+
+   41 simple_list: simple simple_full
+
+   42 simple_full: ',' simple simple_full
+   43            | %empty
+
+   44 call: T_id '(' expr_list ')'
+   45     | T_id '(' ')'
+
+   46 expr_list: expr expr_full
+
+   47 expr_full: ',' expr expr_full
+   48          | %empty
+
+   49 atom: T_id
+   50     | T_string
+   51     | array_cell
+   52     | call
+
+   53 array_cell: T_id '[' expr ']'
+   54           | array_cell '[' expr ']'
+
+   55 expr: atom
+   56     | T_int_const
+   57     | T_char_const
+   58     | '(' expr ')'
+   59     | '+' expr
+   60     | '-' expr
+   61     | expr '+' expr
+   62     | expr '-' expr
+   63     | expr '*' expr
+   64     | expr '/' expr
+   65     | expr "mod" expr
+   66     | expr '=' expr
+   67     | expr "<>" expr
+   68     | expr '<' expr
+   69     | expr '>' expr
+   70     | expr "<=" expr
+   71     | expr ">=" expr
+   72     | "true"
+   73     | "false"
+   74     | "not" expr
+   75     | expr "and" expr
+   76     | expr "or" expr
+   77     | "new" type '[' expr ']'
+   78     | "nil"
+   79     | "nilq" '(' expr ')'
+   80     | expr '#' expr
+   81     | "head" '(' expr ')'
+   82     | "tail" '(' expr ')'
+
+
+Terminals, with rules where they appear
+
+$end (0) 0
+'#' (35) 80
+'(' (40) 7 8 44 45 58 79 81 82
+')' (41) 7 8 44 45 58 79 81 82
+'*' (42) 63
+'+' (43) 59 61
+',' (44) 16 42 47
+'-' (45) 60 62
+'/' (47) 64
+':' (58) 2 32 33 34 36
+';' (59) 11 32
+'<' (60) 68
+'=' (61) 66
+'>' (62) 69
+'[' (91) 21 22 53 54 77
+']' (93) 21 22 53 54 77
+error (256)
+"and" (258) 75
+"bool" (259) 19
+"char" (260) 20
+"decl" (261) 23
+"def" (262) 2
+"else" (263) 36
+"elsif" (264) 34
+"end" (265) 2 32 33
+"exit" (266) 29
+"false" (267) 73
+"for" (268) 32
+"head" (269) 81
+"if" (270) 33
+"int" (271) 18
+"list" (272) 22
+"mod" (273) 65
+"new" (274) 77
+"nil" (275) 78
+"nilq" (276) 79
+"not" (277) 74
+"or" (278) 76
+"ref" (279) 13
+"return" (280) 30
+"skip" (281) 38
+"tail" (282) 82
+"true" (283) 72
+"<=" (284) 70
+">=" (285) 71
+"<>" (286) 67
+":=" (287) 39
+T_id (288) 7 8 15 16 44 45 49 53
+T_int_const (289) 56
+T_char_const (290) 57
+T_string (291) 50
+
+
+Nonterminals, with rules where they appear
+
+$accept (52)
+    on left: 0
+program (53)
+    on left: 1, on right: 0
+func_def (54)
+    on left: 2, on right: 1 3
+def_list (55)
+    on left: 3 4 5 6, on right: 2 3 4 5
+header (56)
+    on left: 7 8, on right: 2 23
+formal_list (57)
+    on left: 9 10, on right: 7 8
+formal_full (58)
+    on left: 11 12, on right: 9 11
+formal (59)
+    on left: 13 14, on right: 9 11
+id_list (60)
+    on left: 15, on right: 13 14 24
+id_full (61)
+    on left: 16 17, on right: 15 16
+type (62)
+    on left: 18 19 20 21 22, on right: 7 13 14 21 22 24 77
+func_decl (63)
+    on left: 23, on right: 4
+var_def (64)
+    on left: 24, on right: 5
+stmt_list (65)
+    on left: 25, on right: 2 32 33 34 36
+stmt_full (66)
+    on left: 26 27, on right: 25 26
+stmt (67)
+    on left: 28 29 30 31 32, on right: 25 26
+if_clause (68)
+    on left: 33, on right: 31
+elsif_clause (69)
+    on left: 34 35, on right: 33 34
+else_clause (70)
+    on left: 36 37, on right: 33
+simple (71)
+    on left: 38 39 40, on right: 28 41 42
+simple_list (72)
+    on left: 41, on right: 32
+simple_full (73)
+    on left: 42 43, on right: 41 42
+call (74)
+    on left: 44 45, on right: 40 52
+expr_list (75)
+    on left: 46, on right: 44
+expr_full (76)
+    on left: 47 48, on right: 46 47
+atom (77)
+    on left: 49 50 51 52, on right: 39 55
+array_cell (78)
+    on left: 53 54, on right: 51 54
+expr (79)
+    on left: 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72
+    73 74 75 76 77 78 79 80 81 82, on right: 30 32 33 34 39 46 47 53
+    54 58 59 60 61 62 63 64 65 66 67 68 69 70 71 74 75 76 77 79 80
+    81 82
+
+
+State 0
+
+    0 $accept: . program $end
+
+    "def"  shift, and go to state 1
+
+    program   go to state 2
+    func_def  go to state 3
+
+
+State 1
+
+    2 func_def: "def" . header ':' def_list stmt_list "end"
+
+    "bool"  shift, and go to state 4
+    "char"  shift, and go to state 5
+    "int"   shift, and go to state 6
+    "list"  shift, and go to state 7
+    T_id    shift, and go to state 8
+
+    header  go to state 9
+    type    go to state 10
+
+
+State 2
+
+    0 $accept: program . $end
+
+    $end  shift, and go to state 11
+
+
+State 3
+
+    1 program: func_def .
+
+    $default  reduce using rule 1 (program)
+
+
+State 4
+
+   19 type: "bool" .
+
+    $default  reduce using rule 19 (type)
+
+
+State 5
+
+   20 type: "char" .
+
+    $default  reduce using rule 20 (type)
+
+
+State 6
+
+   18 type: "int" .
+
+    $default  reduce using rule 18 (type)
+
+
+State 7
+
+   22 type: "list" . '[' type ']'
+
+    '['  shift, and go to state 12
+
+
+State 8
+
+    8 header: T_id . '(' formal_list ')'
+
+    '('  shift, and go to state 13
+
+
+State 9
+
+    2 func_def: "def" header . ':' def_list stmt_list "end"
+
+    ':'  shift, and go to state 14
+
+
+State 10
+
+    7 header: type . T_id '(' formal_list ')'
+   21 type: type . '[' ']'
+
+    T_id  shift, and go to state 15
+    '['   shift, and go to state 16
+
+
+State 11
+
+    0 $accept: program $end .
+
+    $default  accept
+
+
+State 12
+
+   22 type: "list" '[' . type ']'
+
+    "bool"  shift, and go to state 4
+    "char"  shift, and go to state 5
+    "int"   shift, and go to state 6
+    "list"  shift, and go to state 7
+
+    type  go to state 17
+
+
+State 13
+
+    8 header: T_id '(' . formal_list ')'
+
+    "bool"  shift, and go to state 4
+    "char"  shift, and go to state 5
+    "int"   shift, and go to state 6
+    "list"  shift, and go to state 7
+    "ref"   shift, and go to state 18
+
+    $default  reduce using rule 10 (formal_list)
+
+    formal_list  go to state 19
+    formal       go to state 20
+    type         go to state 21
+
+
+State 14
+
+    2 func_def: "def" header ':' . def_list stmt_list "end"
+
+    "bool"  shift, and go to state 4
+    "char"  shift, and go to state 5
+    "decl"  shift, and go to state 22
+    "def"   shift, and go to state 1
+    "int"   shift, and go to state 6
+    "list"  shift, and go to state 7
+
+    $default  reduce using rule 6 (def_list)
+
+    func_def   go to state 23
+    def_list   go to state 24
+    type       go to state 25
+    func_decl  go to state 26
+    var_def    go to state 27
+
+
+State 15
+
+    7 header: type T_id . '(' formal_list ')'
+
+    '('  shift, and go to state 28
+
+
+State 16
+
+   21 type: type '[' . ']'
+
+    ']'  shift, and go to state 29
+
+
+State 17
+
+   21 type: type . '[' ']'
+   22     | "list" '[' type . ']'
+
+    '['  shift, and go to state 16
+    ']'  shift, and go to state 30
+
+
+State 18
+
+   13 formal: "ref" . type id_list
+
+    "bool"  shift, and go to state 4
+    "char"  shift, and go to state 5
+    "int"   shift, and go to state 6
+    "list"  shift, and go to state 7
+
+    type  go to state 31
+
+
+State 19
+
+    8 header: T_id '(' formal_list . ')'
+
+    ')'  shift, and go to state 32
+
+
+State 20
+
+    9 formal_list: formal . formal_full
+
+    ';'  shift, and go to state 33
+
+    $default  reduce using rule 12 (formal_full)
+
+    formal_full  go to state 34
+
+
+State 21
+
+   14 formal: type . id_list
+   21 type: type . '[' ']'
+
+    T_id  shift, and go to state 35
+    '['   shift, and go to state 16
+
+    id_list  go to state 36
+
+
+State 22
+
+   23 func_decl: "decl" . header
+
+    "bool"  shift, and go to state 4
+    "char"  shift, and go to state 5
+    "int"   shift, and go to state 6
+    "list"  shift, and go to state 7
+    T_id    shift, and go to state 8
+
+    header  go to state 37
+    type    go to state 10
+
+
+State 23
+
+    3 def_list: func_def . def_list
+
+    "bool"  shift, and go to state 4
+    "char"  shift, and go to state 5
+    "decl"  shift, and go to state 22
+    "def"   shift, and go to state 1
+    "int"   shift, and go to state 6
+    "list"  shift, and go to state 7
+
+    $default  reduce using rule 6 (def_list)
+
+    func_def   go to state 23
+    def_list   go to state 38
+    type       go to state 25
+    func_decl  go to state 26
+    var_def    go to state 27
+
+
+State 24
+
+    2 func_def: "def" header ':' def_list . stmt_list "end"
+
+    "exit"    shift, and go to state 39
+    "for"     shift, and go to state 40
+    "if"      shift, and go to state 41
+    "return"  shift, and go to state 42
+    "skip"    shift, and go to state 43
+    T_id      shift, and go to state 44
+    T_string  shift, and go to state 45
+
+    stmt_list   go to state 46
+    stmt        go to state 47
+    if_clause   go to state 48
+    simple      go to state 49
+    call        go to state 50
+    atom        go to state 51
+    array_cell  go to state 52
+
+
+State 25
+
+   21 type: type . '[' ']'
+   24 var_def: type . id_list
+
+    T_id  shift, and go to state 35
+    '['   shift, and go to state 16
+
+    id_list  go to state 53
+
+
+State 26
+
+    4 def_list: func_decl . def_list
+
+    "bool"  shift, and go to state 4
+    "char"  shift, and go to state 5
+    "decl"  shift, and go to state 22
+    "def"   shift, and go to state 1
+    "int"   shift, and go to state 6
+    "list"  shift, and go to state 7
+
+    $default  reduce using rule 6 (def_list)
+
+    func_def   go to state 23
+    def_list   go to state 54
+    type       go to state 25
+    func_decl  go to state 26
+    var_def    go to state 27
+
+
+State 27
+
+    5 def_list: var_def . def_list
+
+    "bool"  shift, and go to state 4
+    "char"  shift, and go to state 5
+    "decl"  shift, and go to state 22
+    "def"   shift, and go to state 1
+    "int"   shift, and go to state 6
+    "list"  shift, and go to state 7
+
+    $default  reduce using rule 6 (def_list)
+
+    func_def   go to state 23
+    def_list   go to state 55
+    type       go to state 25
+    func_decl  go to state 26
+    var_def    go to state 27
+
+
+State 28
+
+    7 header: type T_id '(' . formal_list ')'
+
+    "bool"  shift, and go to state 4
+    "char"  shift, and go to state 5
+    "int"   shift, and go to state 6
+    "list"  shift, and go to state 7
+    "ref"   shift, and go to state 18
+
+    $default  reduce using rule 10 (formal_list)
+
+    formal_list  go to state 56
+    formal       go to state 20
+    type         go to state 21
+
+
+State 29
+
+   21 type: type '[' ']' .
+
+    $default  reduce using rule 21 (type)
+
+
+State 30
+
+   22 type: "list" '[' type ']' .
+
+    $default  reduce using rule 22 (type)
+
+
+State 31
+
+   13 formal: "ref" type . id_list
+   21 type: type . '[' ']'
+
+    T_id  shift, and go to state 35
+    '['   shift, and go to state 16
+
+    id_list  go to state 57
+
+
+State 32
+
+    8 header: T_id '(' formal_list ')' .
+
+    $default  reduce using rule 8 (header)
+
+
+State 33
+
+   11 formal_full: ';' . formal formal_full
+
+    "bool"  shift, and go to state 4
+    "char"  shift, and go to state 5
+    "int"   shift, and go to state 6
+    "list"  shift, and go to state 7
+    "ref"   shift, and go to state 18
+
+    formal  go to state 58
+    type    go to state 21
+
+
+State 34
+
+    9 formal_list: formal formal_full .
+
+    $default  reduce using rule 9 (formal_list)
+
+
+State 35
+
+   15 id_list: T_id . id_full
+
+    ','  shift, and go to state 59
+
+    $default  reduce using rule 17 (id_full)
+
+    id_full  go to state 60
+
+
+State 36
+
+   14 formal: type id_list .
+
+    $default  reduce using rule 14 (formal)
+
+
+State 37
+
+   23 func_decl: "decl" header .
+
+    $default  reduce using rule 23 (func_decl)
+
+
+State 38
+
+    3 def_list: func_def def_list .
+
+    $default  reduce using rule 3 (def_list)
+
+
+State 39
+
+   29 stmt: "exit" .
+
+    $default  reduce using rule 29 (stmt)
+
+
+State 40
+
+   32 stmt: "for" . simple_list ';' expr ';' simple_list ':' stmt_list "end"
+
+    "skip"    shift, and go to state 43
+    T_id      shift, and go to state 44
+    T_string  shift, and go to state 45
+
+    simple       go to state 61
+    simple_list  go to state 62
+    call         go to state 50
+    atom         go to state 51
+    array_cell   go to state 52
+
+
+State 41
+
+   33 if_clause: "if" . expr ':' stmt_list elsif_clause else_clause "end"
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 78
+
+
+State 42
+
+   30 stmt: "return" . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 79
+
+
+State 43
+
+   38 simple: "skip" .
+
+    $default  reduce using rule 38 (simple)
+
+
+State 44
+
+   44 call: T_id . '(' expr_list ')'
+   45     | T_id . '(' ')'
+   49 atom: T_id .
+   53 array_cell: T_id . '[' expr ']'
+
+    '('  shift, and go to state 80
+    '['  shift, and go to state 81
+
+    $default  reduce using rule 49 (atom)
+
+
+State 45
+
+   50 atom: T_string .
+
+    $default  reduce using rule 50 (atom)
+
+
+State 46
+
+    2 func_def: "def" header ':' def_list stmt_list . "end"
+
+    "end"  shift, and go to state 82
+
+
+State 47
+
+   25 stmt_list: stmt . stmt_full
+
+    "exit"    shift, and go to state 39
+    "for"     shift, and go to state 40
+    "if"      shift, and go to state 41
+    "return"  shift, and go to state 42
+    "skip"    shift, and go to state 43
+    T_id      shift, and go to state 44
+    T_string  shift, and go to state 45
+
+    $default  reduce using rule 27 (stmt_full)
+
+    stmt_full   go to state 83
+    stmt        go to state 84
+    if_clause   go to state 48
+    simple      go to state 49
+    call        go to state 50
+    atom        go to state 51
+    array_cell  go to state 52
+
+
+State 48
+
+   31 stmt: if_clause .
+
+    $default  reduce using rule 31 (stmt)
+
+
+State 49
+
+   28 stmt: simple .
+
+    $default  reduce using rule 28 (stmt)
+
+
+State 50
+
+   40 simple: call .
+   52 atom: call .
+
+    ":="      reduce using rule 52 (atom)
+    $default  reduce using rule 40 (simple)
+
+
+State 51
+
+   39 simple: atom . ":=" expr
+
+    ":="  shift, and go to state 85
+
+
+State 52
+
+   51 atom: array_cell .
+   54 array_cell: array_cell . '[' expr ']'
+
+    '['  shift, and go to state 86
+
+    $default  reduce using rule 51 (atom)
+
+
+State 53
+
+   24 var_def: type id_list .
+
+    $default  reduce using rule 24 (var_def)
+
+
+State 54
+
+    4 def_list: func_decl def_list .
+
+    $default  reduce using rule 4 (def_list)
+
+
+State 55
+
+    5 def_list: var_def def_list .
+
+    $default  reduce using rule 5 (def_list)
+
+
+State 56
+
+    7 header: type T_id '(' formal_list . ')'
+
+    ')'  shift, and go to state 87
+
+
+State 57
+
+   13 formal: "ref" type id_list .
+
+    $default  reduce using rule 13 (formal)
+
+
+State 58
+
+   11 formal_full: ';' formal . formal_full
+
+    ';'  shift, and go to state 33
+
+    $default  reduce using rule 12 (formal_full)
+
+    formal_full  go to state 88
+
+
+State 59
+
+   16 id_full: ',' . T_id id_full
+
+    T_id  shift, and go to state 89
+
+
+State 60
+
+   15 id_list: T_id id_full .
+
+    $default  reduce using rule 15 (id_list)
+
+
+State 61
+
+   41 simple_list: simple . simple_full
+
+    ','  shift, and go to state 90
+
+    $default  reduce using rule 43 (simple_full)
+
+    simple_full  go to state 91
+
+
+State 62
+
+   32 stmt: "for" simple_list . ';' expr ';' simple_list ':' stmt_list "end"
+
+    ';'  shift, and go to state 92
+
+
+State 63
+
+   73 expr: "false" .
+
+    $default  reduce using rule 73 (expr)
+
+
+State 64
+
+   81 expr: "head" . '(' expr ')'
+
+    '('  shift, and go to state 93
+
+
+State 65
+
+   77 expr: "new" . type '[' expr ']'
+
+    "bool"  shift, and go to state 4
+    "char"  shift, and go to state 5
+    "int"   shift, and go to state 6
+    "list"  shift, and go to state 7
+
+    type  go to state 94
+
+
+State 66
+
+   78 expr: "nil" .
+
+    $default  reduce using rule 78 (expr)
+
+
+State 67
+
+   79 expr: "nilq" . '(' expr ')'
+
+    '('  shift, and go to state 95
+
+
+State 68
+
+   74 expr: "not" . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 96
+
+
+State 69
+
+   82 expr: "tail" . '(' expr ')'
+
+    '('  shift, and go to state 97
+
+
+State 70
+
+   72 expr: "true" .
+
+    $default  reduce using rule 72 (expr)
+
+
+State 71
+
+   56 expr: T_int_const .
+
+    $default  reduce using rule 56 (expr)
+
+
+State 72
+
+   57 expr: T_char_const .
+
+    $default  reduce using rule 57 (expr)
+
+
+State 73
+
+   59 expr: '+' . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 98
+
+
+State 74
+
+   60 expr: '-' . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 99
+
+
+State 75
+
+   58 expr: '(' . expr ')'
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 100
+
+
+State 76
+
+   52 atom: call .
+
+    $default  reduce using rule 52 (atom)
+
+
+State 77
+
+   55 expr: atom .
+
+    $default  reduce using rule 55 (expr)
+
+
+State 78
+
+   33 if_clause: "if" expr . ':' stmt_list elsif_clause else_clause "end"
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "and"  shift, and go to state 101
+    "mod"  shift, and go to state 102
+    "or"   shift, and go to state 103
+    "<="   shift, and go to state 104
+    ">="   shift, and go to state 105
+    "<>"   shift, and go to state 106
+    '='    shift, and go to state 107
+    '<'    shift, and go to state 108
+    '>'    shift, and go to state 109
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+    ':'    shift, and go to state 115
+
+
+State 79
+
+   30 stmt: "return" expr .
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "and"  shift, and go to state 101
+    "mod"  shift, and go to state 102
+    "or"   shift, and go to state 103
+    "<="   shift, and go to state 104
+    ">="   shift, and go to state 105
+    "<>"   shift, and go to state 106
+    '='    shift, and go to state 107
+    '<'    shift, and go to state 108
+    '>'    shift, and go to state 109
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+
+    $default  reduce using rule 30 (stmt)
+
+
+State 80
+
+   44 call: T_id '(' . expr_list ')'
+   45     | T_id '(' . ')'
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+    ')'           shift, and go to state 116
+
+    call        go to state 76
+    expr_list   go to state 117
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 118
+
+
+State 81
+
+   53 array_cell: T_id '[' . expr ']'
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 119
+
+
+State 82
+
+    2 func_def: "def" header ':' def_list stmt_list "end" .
+
+    $default  reduce using rule 2 (func_def)
+
+
+State 83
+
+   25 stmt_list: stmt stmt_full .
+
+    $default  reduce using rule 25 (stmt_list)
+
+
+State 84
+
+   26 stmt_full: stmt . stmt_full
+
+    "exit"    shift, and go to state 39
+    "for"     shift, and go to state 40
+    "if"      shift, and go to state 41
+    "return"  shift, and go to state 42
+    "skip"    shift, and go to state 43
+    T_id      shift, and go to state 44
+    T_string  shift, and go to state 45
+
+    $default  reduce using rule 27 (stmt_full)
+
+    stmt_full   go to state 120
+    stmt        go to state 84
+    if_clause   go to state 48
+    simple      go to state 49
+    call        go to state 50
+    atom        go to state 51
+    array_cell  go to state 52
+
+
+State 85
+
+   39 simple: atom ":=" . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 121
+
+
+State 86
+
+   54 array_cell: array_cell '[' . expr ']'
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 122
+
+
+State 87
+
+    7 header: type T_id '(' formal_list ')' .
+
+    $default  reduce using rule 7 (header)
+
+
+State 88
+
+   11 formal_full: ';' formal formal_full .
+
+    $default  reduce using rule 11 (formal_full)
+
+
+State 89
+
+   16 id_full: ',' T_id . id_full
+
+    ','  shift, and go to state 59
+
+    $default  reduce using rule 17 (id_full)
+
+    id_full  go to state 123
+
+
+State 90
+
+   42 simple_full: ',' . simple simple_full
+
+    "skip"    shift, and go to state 43
+    T_id      shift, and go to state 44
+    T_string  shift, and go to state 45
+
+    simple      go to state 124
+    call        go to state 50
+    atom        go to state 51
+    array_cell  go to state 52
+
+
+State 91
+
+   41 simple_list: simple simple_full .
+
+    $default  reduce using rule 41 (simple_list)
+
+
+State 92
+
+   32 stmt: "for" simple_list ';' . expr ';' simple_list ':' stmt_list "end"
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 125
+
+
+State 93
+
+   81 expr: "head" '(' . expr ')'
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 126
+
+
+State 94
+
+   21 type: type . '[' ']'
+   77 expr: "new" type . '[' expr ']'
+
+    '['  shift, and go to state 127
+
+
+State 95
+
+   79 expr: "nilq" '(' . expr ')'
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 128
+
+
+State 96
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   74     | "not" expr .
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "mod"  shift, and go to state 102
+    "<="   shift, and go to state 104
+    ">="   shift, and go to state 105
+    "<>"   shift, and go to state 106
+    '='    shift, and go to state 107
+    '<'    shift, and go to state 108
+    '>'    shift, and go to state 109
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+
+    $default  reduce using rule 74 (expr)
+
+
+State 97
+
+   82 expr: "tail" '(' . expr ')'
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 129
+
+
+State 98
+
+   59 expr: '+' expr .
+   61     | expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "mod"  shift, and go to state 102
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+
+    $default  reduce using rule 59 (expr)
+
+
+State 99
+
+   60 expr: '-' expr .
+   61     | expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "mod"  shift, and go to state 102
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+
+    $default  reduce using rule 60 (expr)
+
+
+State 100
+
+   58 expr: '(' expr . ')'
+   61     | expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "and"  shift, and go to state 101
+    "mod"  shift, and go to state 102
+    "or"   shift, and go to state 103
+    "<="   shift, and go to state 104
+    ">="   shift, and go to state 105
+    "<>"   shift, and go to state 106
+    '='    shift, and go to state 107
+    '<'    shift, and go to state 108
+    '>'    shift, and go to state 109
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+    ')'    shift, and go to state 130
+
+
+State 101
+
+   75 expr: expr "and" . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 131
+
+
+State 102
+
+   65 expr: expr "mod" . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 132
+
+
+State 103
+
+   76 expr: expr "or" . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 133
+
+
+State 104
+
+   70 expr: expr "<=" . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 134
+
+
+State 105
+
+   71 expr: expr ">=" . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 135
+
+
+State 106
+
+   67 expr: expr "<>" . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 136
+
+
+State 107
+
+   66 expr: expr '=' . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 137
+
+
+State 108
+
+   68 expr: expr '<' . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 138
+
+
+State 109
+
+   69 expr: expr '>' . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 139
+
+
+State 110
+
+   80 expr: expr '#' . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 140
+
+
+State 111
+
+   61 expr: expr '+' . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 141
+
+
+State 112
+
+   62 expr: expr '-' . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 142
+
+
+State 113
+
+   63 expr: expr '*' . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 143
+
+
+State 114
+
+   64 expr: expr '/' . expr
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 144
+
+
+State 115
+
+   33 if_clause: "if" expr ':' . stmt_list elsif_clause else_clause "end"
+
+    "exit"    shift, and go to state 39
+    "for"     shift, and go to state 40
+    "if"      shift, and go to state 41
+    "return"  shift, and go to state 42
+    "skip"    shift, and go to state 43
+    T_id      shift, and go to state 44
+    T_string  shift, and go to state 45
+
+    stmt_list   go to state 145
+    stmt        go to state 47
+    if_clause   go to state 48
+    simple      go to state 49
+    call        go to state 50
+    atom        go to state 51
+    array_cell  go to state 52
+
+
+State 116
+
+   45 call: T_id '(' ')' .
+
+    $default  reduce using rule 45 (call)
+
+
+State 117
+
+   44 call: T_id '(' expr_list . ')'
+
+    ')'  shift, and go to state 146
+
+
+State 118
+
+   46 expr_list: expr . expr_full
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "and"  shift, and go to state 101
+    "mod"  shift, and go to state 102
+    "or"   shift, and go to state 103
+    "<="   shift, and go to state 104
+    ">="   shift, and go to state 105
+    "<>"   shift, and go to state 106
+    '='    shift, and go to state 107
+    '<'    shift, and go to state 108
+    '>'    shift, and go to state 109
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+    ','    shift, and go to state 147
+
+    $default  reduce using rule 48 (expr_full)
+
+    expr_full  go to state 148
+
+
+State 119
+
+   53 array_cell: T_id '[' expr . ']'
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "and"  shift, and go to state 101
+    "mod"  shift, and go to state 102
+    "or"   shift, and go to state 103
+    "<="   shift, and go to state 104
+    ">="   shift, and go to state 105
+    "<>"   shift, and go to state 106
+    '='    shift, and go to state 107
+    '<'    shift, and go to state 108
+    '>'    shift, and go to state 109
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+    ']'    shift, and go to state 149
+
+
+State 120
+
+   26 stmt_full: stmt stmt_full .
+
+    $default  reduce using rule 26 (stmt_full)
+
+
+State 121
+
+   39 simple: atom ":=" expr .
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "and"  shift, and go to state 101
+    "mod"  shift, and go to state 102
+    "or"   shift, and go to state 103
+    "<="   shift, and go to state 104
+    ">="   shift, and go to state 105
+    "<>"   shift, and go to state 106
+    '='    shift, and go to state 107
+    '<'    shift, and go to state 108
+    '>'    shift, and go to state 109
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+
+    $default  reduce using rule 39 (simple)
+
+
+State 122
+
+   54 array_cell: array_cell '[' expr . ']'
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "and"  shift, and go to state 101
+    "mod"  shift, and go to state 102
+    "or"   shift, and go to state 103
+    "<="   shift, and go to state 104
+    ">="   shift, and go to state 105
+    "<>"   shift, and go to state 106
+    '='    shift, and go to state 107
+    '<'    shift, and go to state 108
+    '>'    shift, and go to state 109
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+    ']'    shift, and go to state 150
+
+
+State 123
+
+   16 id_full: ',' T_id id_full .
+
+    $default  reduce using rule 16 (id_full)
+
+
+State 124
+
+   42 simple_full: ',' simple . simple_full
+
+    ','  shift, and go to state 90
+
+    $default  reduce using rule 43 (simple_full)
+
+    simple_full  go to state 151
+
+
+State 125
+
+   32 stmt: "for" simple_list ';' expr . ';' simple_list ':' stmt_list "end"
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "and"  shift, and go to state 101
+    "mod"  shift, and go to state 102
+    "or"   shift, and go to state 103
+    "<="   shift, and go to state 104
+    ">="   shift, and go to state 105
+    "<>"   shift, and go to state 106
+    '='    shift, and go to state 107
+    '<'    shift, and go to state 108
+    '>'    shift, and go to state 109
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+    ';'    shift, and go to state 152
+
+
+State 126
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+   81     | "head" '(' expr . ')'
+
+    "and"  shift, and go to state 101
+    "mod"  shift, and go to state 102
+    "or"   shift, and go to state 103
+    "<="   shift, and go to state 104
+    ">="   shift, and go to state 105
+    "<>"   shift, and go to state 106
+    '='    shift, and go to state 107
+    '<'    shift, and go to state 108
+    '>'    shift, and go to state 109
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+    ')'    shift, and go to state 153
+
+
+State 127
+
+   21 type: type '[' . ']'
+   77 expr: "new" type '[' . expr ']'
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+    ']'           shift, and go to state 29
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 154
+
+
+State 128
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   79     | "nilq" '(' expr . ')'
+   80     | expr . '#' expr
+
+    "and"  shift, and go to state 101
+    "mod"  shift, and go to state 102
+    "or"   shift, and go to state 103
+    "<="   shift, and go to state 104
+    ">="   shift, and go to state 105
+    "<>"   shift, and go to state 106
+    '='    shift, and go to state 107
+    '<'    shift, and go to state 108
+    '>'    shift, and go to state 109
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+    ')'    shift, and go to state 155
+
+
+State 129
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+   82     | "tail" '(' expr . ')'
+
+    "and"  shift, and go to state 101
+    "mod"  shift, and go to state 102
+    "or"   shift, and go to state 103
+    "<="   shift, and go to state 104
+    ">="   shift, and go to state 105
+    "<>"   shift, and go to state 106
+    '='    shift, and go to state 107
+    '<'    shift, and go to state 108
+    '>'    shift, and go to state 109
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+    ')'    shift, and go to state 156
+
+
+State 130
+
+   58 expr: '(' expr ')' .
+
+    $default  reduce using rule 58 (expr)
+
+
+State 131
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   75     | expr "and" expr .
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "mod"  shift, and go to state 102
+    "<="   shift, and go to state 104
+    ">="   shift, and go to state 105
+    "<>"   shift, and go to state 106
+    '='    shift, and go to state 107
+    '<'    shift, and go to state 108
+    '>'    shift, and go to state 109
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+
+    $default  reduce using rule 75 (expr)
+
+
+State 132
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   65     | expr "mod" expr .
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    $default  reduce using rule 65 (expr)
+
+
+State 133
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   76     | expr "or" expr .
+   80     | expr . '#' expr
+
+    "and"  shift, and go to state 101
+    "mod"  shift, and go to state 102
+    "<="   shift, and go to state 104
+    ">="   shift, and go to state 105
+    "<>"   shift, and go to state 106
+    '='    shift, and go to state 107
+    '<'    shift, and go to state 108
+    '>'    shift, and go to state 109
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+
+    $default  reduce using rule 76 (expr)
+
+
+State 134
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   70     | expr "<=" expr .
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "mod"  shift, and go to state 102
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+
+    "<="  error (nonassociative)
+    ">="  error (nonassociative)
+    "<>"  error (nonassociative)
+    '='   error (nonassociative)
+    '<'   error (nonassociative)
+    '>'   error (nonassociative)
+
+    $default  reduce using rule 70 (expr)
+
+
+State 135
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   71     | expr ">=" expr .
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "mod"  shift, and go to state 102
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+
+    "<="  error (nonassociative)
+    ">="  error (nonassociative)
+    "<>"  error (nonassociative)
+    '='   error (nonassociative)
+    '<'   error (nonassociative)
+    '>'   error (nonassociative)
+
+    $default  reduce using rule 71 (expr)
+
+
+State 136
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   67     | expr "<>" expr .
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "mod"  shift, and go to state 102
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+
+    "<="  error (nonassociative)
+    ">="  error (nonassociative)
+    "<>"  error (nonassociative)
+    '='   error (nonassociative)
+    '<'   error (nonassociative)
+    '>'   error (nonassociative)
+
+    $default  reduce using rule 67 (expr)
+
+
+State 137
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   66     | expr '=' expr .
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "mod"  shift, and go to state 102
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+
+    "<="  error (nonassociative)
+    ">="  error (nonassociative)
+    "<>"  error (nonassociative)
+    '='   error (nonassociative)
+    '<'   error (nonassociative)
+    '>'   error (nonassociative)
+
+    $default  reduce using rule 66 (expr)
+
+
+State 138
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   68     | expr '<' expr .
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "mod"  shift, and go to state 102
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+
+    "<="  error (nonassociative)
+    ">="  error (nonassociative)
+    "<>"  error (nonassociative)
+    '='   error (nonassociative)
+    '<'   error (nonassociative)
+    '>'   error (nonassociative)
+
+    $default  reduce using rule 68 (expr)
+
+
+State 139
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   69     | expr '>' expr .
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "mod"  shift, and go to state 102
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+
+    "<="  error (nonassociative)
+    ">="  error (nonassociative)
+    "<>"  error (nonassociative)
+    '='   error (nonassociative)
+    '<'   error (nonassociative)
+    '>'   error (nonassociative)
+
+    $default  reduce using rule 69 (expr)
+
+
+State 140
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+   80     | expr '#' expr .
+
+    "mod"  shift, and go to state 102
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+
+    $default  reduce using rule 80 (expr)
+
+
+State 141
+
+   61 expr: expr . '+' expr
+   61     | expr '+' expr .
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "mod"  shift, and go to state 102
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+
+    $default  reduce using rule 61 (expr)
+
+
+State 142
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   62     | expr '-' expr .
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "mod"  shift, and go to state 102
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+
+    $default  reduce using rule 62 (expr)
+
+
+State 143
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   63     | expr '*' expr .
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    $default  reduce using rule 63 (expr)
+
+
+State 144
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   64     | expr '/' expr .
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    $default  reduce using rule 64 (expr)
+
+
+State 145
+
+   33 if_clause: "if" expr ':' stmt_list . elsif_clause else_clause "end"
+
+    "elsif"  shift, and go to state 157
+
+    $default  reduce using rule 35 (elsif_clause)
+
+    elsif_clause  go to state 158
+
+
+State 146
+
+   44 call: T_id '(' expr_list ')' .
+
+    $default  reduce using rule 44 (call)
+
+
+State 147
+
+   47 expr_full: ',' . expr expr_full
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 159
+
+
+State 148
+
+   46 expr_list: expr expr_full .
+
+    $default  reduce using rule 46 (expr_list)
+
+
+State 149
+
+   53 array_cell: T_id '[' expr ']' .
+
+    $default  reduce using rule 53 (array_cell)
+
+
+State 150
+
+   54 array_cell: array_cell '[' expr ']' .
+
+    $default  reduce using rule 54 (array_cell)
+
+
+State 151
+
+   42 simple_full: ',' simple simple_full .
+
+    $default  reduce using rule 42 (simple_full)
+
+
+State 152
+
+   32 stmt: "for" simple_list ';' expr ';' . simple_list ':' stmt_list "end"
+
+    "skip"    shift, and go to state 43
+    T_id      shift, and go to state 44
+    T_string  shift, and go to state 45
+
+    simple       go to state 61
+    simple_list  go to state 160
+    call         go to state 50
+    atom         go to state 51
+    array_cell   go to state 52
+
+
+State 153
+
+   81 expr: "head" '(' expr ')' .
+
+    $default  reduce using rule 81 (expr)
+
+
+State 154
+
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   77     | "new" type '[' expr . ']'
+   80     | expr . '#' expr
+
+    "and"  shift, and go to state 101
+    "mod"  shift, and go to state 102
+    "or"   shift, and go to state 103
+    "<="   shift, and go to state 104
+    ">="   shift, and go to state 105
+    "<>"   shift, and go to state 106
+    '='    shift, and go to state 107
+    '<'    shift, and go to state 108
+    '>'    shift, and go to state 109
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+    ']'    shift, and go to state 161
+
+
+State 155
+
+   79 expr: "nilq" '(' expr ')' .
+
+    $default  reduce using rule 79 (expr)
+
+
+State 156
+
+   82 expr: "tail" '(' expr ')' .
+
+    $default  reduce using rule 82 (expr)
+
+
+State 157
+
+   34 elsif_clause: "elsif" . expr ':' stmt_list elsif_clause
+
+    "false"       shift, and go to state 63
+    "head"        shift, and go to state 64
+    "new"         shift, and go to state 65
+    "nil"         shift, and go to state 66
+    "nilq"        shift, and go to state 67
+    "not"         shift, and go to state 68
+    "tail"        shift, and go to state 69
+    "true"        shift, and go to state 70
+    T_id          shift, and go to state 44
+    T_int_const   shift, and go to state 71
+    T_char_const  shift, and go to state 72
+    T_string      shift, and go to state 45
+    '+'           shift, and go to state 73
+    '-'           shift, and go to state 74
+    '('           shift, and go to state 75
+
+    call        go to state 76
+    atom        go to state 77
+    array_cell  go to state 52
+    expr        go to state 162
+
+
+State 158
+
+   33 if_clause: "if" expr ':' stmt_list elsif_clause . else_clause "end"
+
+    "else"  shift, and go to state 163
+
+    $default  reduce using rule 37 (else_clause)
+
+    else_clause  go to state 164
+
+
+State 159
+
+   47 expr_full: ',' expr . expr_full
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "and"  shift, and go to state 101
+    "mod"  shift, and go to state 102
+    "or"   shift, and go to state 103
+    "<="   shift, and go to state 104
+    ">="   shift, and go to state 105
+    "<>"   shift, and go to state 106
+    '='    shift, and go to state 107
+    '<'    shift, and go to state 108
+    '>'    shift, and go to state 109
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+    ','    shift, and go to state 147
+
+    $default  reduce using rule 48 (expr_full)
+
+    expr_full  go to state 165
+
+
+State 160
+
+   32 stmt: "for" simple_list ';' expr ';' simple_list . ':' stmt_list "end"
+
+    ':'  shift, and go to state 166
+
+
+State 161
+
+   77 expr: "new" type '[' expr ']' .
+
+    $default  reduce using rule 77 (expr)
+
+
+State 162
+
+   34 elsif_clause: "elsif" expr . ':' stmt_list elsif_clause
+   61 expr: expr . '+' expr
+   62     | expr . '-' expr
+   63     | expr . '*' expr
+   64     | expr . '/' expr
+   65     | expr . "mod" expr
+   66     | expr . '=' expr
+   67     | expr . "<>" expr
+   68     | expr . '<' expr
+   69     | expr . '>' expr
+   70     | expr . "<=" expr
+   71     | expr . ">=" expr
+   75     | expr . "and" expr
+   76     | expr . "or" expr
+   80     | expr . '#' expr
+
+    "and"  shift, and go to state 101
+    "mod"  shift, and go to state 102
+    "or"   shift, and go to state 103
+    "<="   shift, and go to state 104
+    ">="   shift, and go to state 105
+    "<>"   shift, and go to state 106
+    '='    shift, and go to state 107
+    '<'    shift, and go to state 108
+    '>'    shift, and go to state 109
+    '#'    shift, and go to state 110
+    '+'    shift, and go to state 111
+    '-'    shift, and go to state 112
+    '*'    shift, and go to state 113
+    '/'    shift, and go to state 114
+    ':'    shift, and go to state 167
+
+
+State 163
+
+   36 else_clause: "else" . ':' stmt_list
+
+    ':'  shift, and go to state 168
+
+
+State 164
+
+   33 if_clause: "if" expr ':' stmt_list elsif_clause else_clause . "end"
+
+    "end"  shift, and go to state 169
+
+
+State 165
+
+   47 expr_full: ',' expr expr_full .
+
+    $default  reduce using rule 47 (expr_full)
+
+
+State 166
+
+   32 stmt: "for" simple_list ';' expr ';' simple_list ':' . stmt_list "end"
+
+    "exit"    shift, and go to state 39
+    "for"     shift, and go to state 40
+    "if"      shift, and go to state 41
+    "return"  shift, and go to state 42
+    "skip"    shift, and go to state 43
+    T_id      shift, and go to state 44
+    T_string  shift, and go to state 45
+
+    stmt_list   go to state 170
+    stmt        go to state 47
+    if_clause   go to state 48
+    simple      go to state 49
+    call        go to state 50
+    atom        go to state 51
+    array_cell  go to state 52
+
+
+State 167
+
+   34 elsif_clause: "elsif" expr ':' . stmt_list elsif_clause
+
+    "exit"    shift, and go to state 39
+    "for"     shift, and go to state 40
+    "if"      shift, and go to state 41
+    "return"  shift, and go to state 42
+    "skip"    shift, and go to state 43
+    T_id      shift, and go to state 44
+    T_string  shift, and go to state 45
+
+    stmt_list   go to state 171
+    stmt        go to state 47
+    if_clause   go to state 48
+    simple      go to state 49
+    call        go to state 50
+    atom        go to state 51
+    array_cell  go to state 52
+
+
+State 168
+
+   36 else_clause: "else" ':' . stmt_list
+
+    "exit"    shift, and go to state 39
+    "for"     shift, and go to state 40
+    "if"      shift, and go to state 41
+    "return"  shift, and go to state 42
+    "skip"    shift, and go to state 43
+    T_id      shift, and go to state 44
+    T_string  shift, and go to state 45
+
+    stmt_list   go to state 172
+    stmt        go to state 47
+    if_clause   go to state 48
+    simple      go to state 49
+    call        go to state 50
+    atom        go to state 51
+    array_cell  go to state 52
+
+
+State 169
+
+   33 if_clause: "if" expr ':' stmt_list elsif_clause else_clause "end" .
+
+    $default  reduce using rule 33 (if_clause)
+
+
+State 170
+
+   32 stmt: "for" simple_list ';' expr ';' simple_list ':' stmt_list . "end"
+
+    "end"  shift, and go to state 173
+
+
+State 171
+
+   34 elsif_clause: "elsif" expr ':' stmt_list . elsif_clause
+
+    "elsif"  shift, and go to state 157
+
+    $default  reduce using rule 35 (elsif_clause)
+
+    elsif_clause  go to state 174
+
+
+State 172
+
+   36 else_clause: "else" ':' stmt_list .
+
+    $default  reduce using rule 36 (else_clause)
+
+
+State 173
+
+   32 stmt: "for" simple_list ';' expr ';' simple_list ':' stmt_list "end" .
+
+    $default  reduce using rule 32 (stmt)
+
+
+State 174
+
+   34 elsif_clause: "elsif" expr ':' stmt_list elsif_clause .
+
+    $default  reduce using rule 34 (elsif_clause)
