@@ -84,7 +84,16 @@ extern int yydebug;
 
 /* Value type.  */
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
-typedef int YYSTYPE;
+typedef union YYSTYPE YYSTYPE;
+union YYSTYPE
+{
+#line 24 "parser.y" /* yacc.c:1909  */
+
+	Type type;
+	char * name;
+
+#line 96 "parser.h" /* yacc.c:1909  */
+};
 # define YYSTYPE_IS_TRIVIAL 1
 # define YYSTYPE_IS_DECLARED 1
 #endif

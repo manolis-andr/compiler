@@ -56,7 +56,6 @@ typedef enum { false=0, true=1 } bool;
 typedef int           RepInteger;         /* Ακέραιες                  */
 typedef unsigned char RepBoolean;         /* Λογικές τιμές             */
 typedef char          RepChar;            /* Χαρακτήρες                */
-typedef long double   RepReal;            /* Πραγματικές               */
 typedef const char *  RepString;          /* Συμβολοσειρές             */
 
 
@@ -70,9 +69,10 @@ struct Type_tag {
        TYPE_INTEGER,                     /* Ακέραιοι                  */
        TYPE_BOOLEAN,                     /* Λογικές τιμές             */
        TYPE_CHAR,                        /* Χαρακτήρες                */
-				                         /* Πραγματικοί ΟΧΙ			  */
        TYPE_ARRAY,                       /* Πίνακες γνωστού μεγέθους  */
-       TYPE_IARRAY                       /* Πίνακες άγνωστου μεγέθους */
+       TYPE_IARRAY,                      /* Πίνακες άγνωστου μεγέθους */
+	   TYPE_LIST,
+	   TYPE_ANY
     } kind;
     Type           refType;              /* Τύπος αναφοράς            */
     RepInteger     size;                 /* Μέγεθος, αν είναι πίνακας */
@@ -182,7 +182,7 @@ extern const Type typeVoid;
 extern const Type typeInteger;
 extern const Type typeBoolean;
 extern const Type typeChar;
-extern const Type typeReal;
+extern const Type typeAny;
 
 
 /* ---------------------------------------------------------------------
@@ -209,6 +209,7 @@ SymbolEntry * lookupEntry        (const char * name, LookupType type,
 
 Type          typeArray          (RepInteger size, Type refType);
 Type          typeIArray         (Type refType);
+Type		  typeList			 (Type refType);
 void          destroyType        (Type type);
 unsigned int  sizeOfType         (Type type);
 bool          equalType          (Type type1, Type type2);

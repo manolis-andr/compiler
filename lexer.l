@@ -2,18 +2,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "symbol.h"
 #include "parser.h"
 #define T_eof	0
 
-
-
+int linecount=1;
 int nesting;
 
 %}
 
 L [A-Za-z]		
 D [0-9]			
-W [ \t\n\r]		
+W [ \t\r]		
 HEX [0-9|A-F|a-f] 	
 ESCAPE \\(n|t|r|0|\\|\'|\"|x{HEX}{HEX})
 
@@ -49,7 +49,7 @@ ESCAPE \\(n|t|r|0|\\|\'|\"|x{HEX}{HEX})
 "elsif"		{ return T_elsif; }
 
 
-{L}({L}|{D}|_|\?)*	{return T_id;}
+{L}({L}|{D}|_|\?)*	{ yylval.name=strdup(yytext); return T_id;}
 
 {D}+		{ return T_int_const; }
 
@@ -66,15 +66,17 @@ ESCAPE \\(n|t|r|0|\\|\'|\"|x{HEX}{HEX})
 [\(|\)|\[|\]|,|;|:]	{ return yytext[0]; }
 ":="			{ return T_assign; }
 
-%[^\n]*\n		{ /* nothing */ }
+%[^\n]*\n		{ /* nothing */ linecount++; }
 
 "<*"			{ nesting=1;  BEGIN(COMMENT);}
 <COMMENT>"<*"	{ nesting++; }
 <COMMENT>"*>"	{ nesting--; if(nesting==0) BEGIN(INITIAL); }
+<COMMENT>"\n"	{ linecount++; }
 <COMMENT>"*"	{ /* nothing */ }
-<COMMENT>[^*]	{ /* nothing */ }
+<COMMENT>[^*\n]	{ /* nothing */ }
 
 {W}+			{ /* nothing */ }
+\n				{ linecount++; }
 
 <<EOF>>			{ return T_eof; }
 

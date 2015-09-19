@@ -48,12 +48,14 @@ static struct Type_tag typeConst [] = {
     { TYPE_INTEGER, NULL, 0, 0 },
     { TYPE_BOOLEAN, NULL, 0, 0 },
     { TYPE_CHAR,    NULL, 0, 0 },
+    { TYPE_ANY,     NULL, 0, 0 },
 };
 
 const Type typeVoid    = &(typeConst[0]);
 const Type typeInteger = &(typeConst[1]);
 const Type typeBoolean = &(typeConst[2]);
 const Type typeChar    = &(typeConst[3]);
+const Type typeAny	   = &(typeConst[4]);
 
 
 /* ---------------------------------------------------------------------
@@ -476,6 +478,20 @@ Type typeIArray (Type refType)
     return n;
 }
 
+Type typeList (Type refType)
+{
+	Type n = (Type) new(sizeof(struct Type_tag));
+
+	n->kind		= TYPE_LIST;
+	n->refType	= refType;
+	n->refCount = 1;
+
+	refType->refCount++;
+
+	return n;
+}
+
+
 void destroyType (Type type)
 {
     switch (type->kind) {
@@ -493,6 +509,8 @@ unsigned int sizeOfType (Type type)
             break;
         case TYPE_INTEGER:
         case TYPE_IARRAY:
+		case TYPE_LIST:
+		case TYPE_ANY:
         case TYPE_BOOLEAN:
         case TYPE_CHAR:
             return 1;
@@ -511,7 +529,8 @@ bool equalType (Type type1, Type type2)
             if (type1->size != type2->size)
                 return false;
         case TYPE_IARRAY:
-			;
+		case TYPE_LIST:
+		;
     }
     return true;        
 }
@@ -544,6 +563,13 @@ void printType (Type type)
             printf("array of ");
             printType(type->refType);
             break;
+		case TYPE_LIST:
+			printf("list of ");
+			printType(type->refType);
+			break;
+		case TYPE_ANY:
+			printf("any type, (strictly for lists) ");
+			break;
     }
 }
 

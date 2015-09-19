@@ -4,11 +4,11 @@
 UFLAGS=
 
 CC=gcc
-CFLAGS= -g $(UFLAGS)
+CFLAGS= $(UFLAGS)
 
-DEBUG?=1
+DEBUG?=0
 ifeq ($(DEBUG),1)
-	CFLAGS+= -DDEBUG
+	CFLAGS+= -g -DDEBUG
 endif
 
 parser: parser.o lexer.o symbol.o general.o error.o
@@ -19,12 +19,6 @@ parser.c: parser.y
 
 lexer.c: lexer.l parser.h
 	flex -s -o $@ $<
-
-#lexer.o: lexer.c
-#	$(CC) $(CFLAGS) -c -o $@ $<
-
-#pareser.o: parser.c
-#	$(CC) $(CFLAGS) -c -o $@ $<
 
 symbol.o: symbol.c error.o general.o
 	$(CC) $(CFLAGS) -c -o $@ $<
