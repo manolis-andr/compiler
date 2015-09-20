@@ -17,13 +17,18 @@ struct Memory{
 	Type			type;
 	PassMode		ref;
 	int				forward;
+	SymbolEntry *	arg;
 } mem;
 
 %}
 
 %union{
 	Type type;
-	char * name;
+	const char * name;
+	struct Expr{
+		Type	type;
+		bool	lval;
+	} expr;
 }
 
 %token T_and	"and"
@@ -62,8 +67,8 @@ struct Memory{
 %token T_char_const
 %token T_string
 
-%type<type> expr
-%type<type> atom
+%type<expr> expr
+%type<expr> atom
 %type<type> type
 %type<type> call
 %type<type> array_cell
@@ -85,22 +90,22 @@ def_list	: func_def def_list
 			| func_decl def_list	
 			| var_def def_list		
 			| /* nothing */
-			;
-
+			
+			/* checks that T_id is uniquely defined in the current scope (not already in Symbol Table) inside newFunction */
 header		: type T_id		{	mem.func = newFunction($2); 
 								if(mem.forward==1) 
 									forwardFunction(mem.func); 
 								openScope();
+								currentScope->returnType = $1;
 							} 
 				'(' formal_list ')' {endFunctionHeader(mem.func,$1);}	 
-			/* check that T_id is uniquely defined in the current scope (not already in Symbol Table) */
 			| T_id			{	mem.func = newFunction($1); 
 								if(mem.forward==1) 
 									forwardFunction(mem.func); 
 								openScope();
+								currentScope->returnType = typeVoid;
 							} 
 				'(' formal_list ')' {endFunctionHeader(mem.func,typeVoid);}	
-			/* check that T_id is uniquely defined in the current scope (not already in Symbol Table) */
 			;
 
 formal_list	: formal formal_full | /* nothing */;
@@ -108,10 +113,16 @@ formal_full	: ';' formal formal_full | /* nothing */;
 
 formal		: "ref" type {mem.ref=PASS_BY_REFERENCE; mem.type=$2;} id_par_list
 			| type {mem.ref=PASS_BY_VALUE; mem.type=$1;} id_par_list
-			;
+			
 
-id_par_list : T_id {newParameter($1,mem.type,mem.ref,mem.func);} id_par_full ;
-id_par_full : ',' T_id {newParameter($2,mem.type,mem.ref,mem.func);} id_par_full | /* nothing */ ;
+			/* checks that T_id is uniquely defined in the current scope (not already in Symbol Table) */
+id_par_list : T_id { if(lookupEntry($1,LOOKUP_CURRENT_SCOPE,false)!=NULL) yyerror("duplicate declaration of identifier in current scope"); 
+					newParameter($1,mem.type,mem.ref,mem.func);} 
+				id_par_full ;
+id_par_full : ',' T_id { if(lookupEntry($2,LOOKUP_CURRENT_SCOPE,false)!=NULL) yyerror("duplicate declaration of identifier in current scope"); 
+						 newParameter($2,mem.type,mem.ref,mem.func);} 
+				id_par_full 
+			| /* nothing */ ;
 
 
 type		: "int"					{$$=typeInteger;}
@@ -121,94 +132,206 @@ type		: "int"					{$$=typeInteger;}
 			| "list" '[' type ']'	{$$=typeList($3);}
 			;
 
-func_decl	: "decl" {mem.forward=1;} header /* check if function has already a forward redeclaration in the current scope */ ;
+func_decl	: "decl"	{mem.forward=1;}	header ;
 
-var_def		: type {mem.type=$1;} id_list /* check if a variable has been redeclared in the current scope as some other entry */  ;
-
-id_list		: T_id {newVariable($1,mem.type);} id_full ;
-id_full		: ',' T_id {newVariable($2,mem.type);} id_full | /* nothing */;
+var_def		: type		{mem.type=$1;}		id_list ;
 
 
-stmt_list	: stmt stmt_full ;
-stmt_full	: stmt stmt_full | /* nothing */;
+id_list		: T_id		{if(lookupEntry($1,LOOKUP_CURRENT_SCOPE,false)!=NULL) yyerror("duplicate declaration of identifier in current scope"); 
+						 newVariable($1,mem.type);} 
+			   id_full 
+			;
+id_full		: ',' T_id	{if(lookupEntry($2,LOOKUP_CURRENT_SCOPE,false)!=NULL) yyerror("duplicate declaration of identifier in current scope"); 
+						 newVariable($2,mem.type);} 
+				id_full 
+			| /* nothing */
+			;
+
+
+
+
+stmt_list	: stmt stmt_full
+stmt_full	: stmt stmt_full
+			| /* nothing */;
 
 stmt		: simple 
-			| "exit"			/* check that this exit stmt is in a block (function) with a return type TYPE_VOID */
-			| "return" expr		/* check that this return stmt is in a block (function) with a return type t same as the expr.type */ 
+			/* check that this exit stmt is in a block (function) with a return type TYPE_VOID */
+			| "exit"			{if(!equalType(currentScope->returnType,typeVoid)) yyerror("exit statement no allowed in a non void block");}
+			/* check that this return stmt is in a block (function) with a return type t same as the expr.type */ 
+			| "return" expr		{if(!equalType(currentScope->returnType,$2.type)) yyerror("return statement is of different type than epxected");}
 			| if_clause 
-			| "for" simple_list ';' expr ';' simple_list ':' stmt_list "end" /* check that expr has type bool */
-			
+			| for_clause
+			;		
 
+for_clause	: "for" simple_list ';' expr ';' simple_list ':' stmt_list "end" 
+			/* check that expr has type bool */ 
+			{if(!equalType($4.type,typeBoolean)) yyerror("condition expression in for clause must be boolean");}
 
 			/* check that expr has type bool, if an expression is evaluated true then we do not evaluate the other elif/else branches */ 
 			/* the following of grammar allows the desired behaviour from is-clauses */
-if_clause	: "if" expr ':' stmt_list elsif_clause else_clause "end" ;
-elsif_clause: "elsif" expr ':' stmt_list elsif_clause | /* nothing */;
-else_clause	: "else" ':' stmt_list | /* nothing */;
+if_clause	: "if" expr {if(!equalType($2.type,typeBoolean)) yyerror("condition expression in if must be boolean");} 
+				':' stmt_list elsif_clause else_clause "end" ;
+
+elsif_clause: "elsif" expr {if(!equalType($2.type,typeBoolean)) yyerror("condition expression in elsif must be boolean");} 
+				':' stmt_list elsif_clause 
+			| /* nothing */;
+
+else_clause	: "else" ':' stmt_list 
+			| /* nothing */;
+
 
 simple		: "skip" 
-			| atom ":=" expr /* atom is l-value && expr.type=atom.typ */
+			| atom ":=" expr {	/* atom is l-value && expr.type=atom.type */
+								if($1.lval==false)				yyerror("expression in left of assigment must be an l-value");
+								if(!equalType($1.type,$3.type))	{fprintf(stderr,"mismatch: "); printType($1.type); printType($3.type); fflush(stdout); yyerror("type mismatch in assigment");}
+							 }  
 			| call 
 			;
 
 simple_list	: simple simple_full ; 
-simple_full	: ',' simple simple_full | /* nothing */;
+simple_full	: ',' simple simple_full | /* nothing */
 
-call		: T_id '(' expr_list ')'	{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); $$=s->u.eFunction.resultType;}	
 			/* check that T_id is ENTRY_FUNCTION && check function call limitations */
-			| T_id '(' ')'				{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); $$=s->u.eFunction.resultType;}	
-			/* check that T_id is ENTRY_FUNCTION && check function call limitations */
+call		: T_id '('			{	SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
+									if(s->entryType!=ENTRY_FUNCTION) yyerror("identifier is not a function");
+									mem.arg=s->u.eFunction.firstArgument;
+									mem.type=s->u.eFunction.resultType;
+								}	
+				expr_list ')'	{$$=mem.type;}
+			| T_id '(' ')'		{	SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
+									if(s->entryType!=ENTRY_FUNCTION) yyerror("identifier is not a function");
+									if(s->u.eFunction.firstArgument!=NULL) yyerror("function expects more arguments");
+									$$=s->u.eFunction.resultType;
+								}	
 			;
 
-expr_list	: expr expr_full ;
-expr_full	:',' expr expr_full | /* nothing */;
-
-atom		: T_id			{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); $$=s->u.eVariable.type;}
-			| T_string		{$$=typeIArray(typeChar);} /*FIXME: Array of char NOT IArray, set lexer to return size*/
-			| array_cell	/* we modified our grammar right here */ {$$=$1;}
-			| call			{$$=$1;}
+expr_list	: expr				{	if(mem.arg==NULL)								
+										yyerror("function expects less arguments");
+									if(!equalType($1.type,mem.arg->u.eParameter.type))	
+										yyerror("type mismatch in function arguments");
+									if(mem.arg->u.eParameter.mode==PASS_BY_REFERENCE && $1.lval==false)			
+										yyerror("parameter pass is by reference but argument is not an l-value");
+									mem.arg=mem.arg->u.eParameter.next;
+								}
+				expr_full
 			;
 
-array_cell	: T_id '[' expr ']' {SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); $$=s->u.eVariable.type;}
-			| array_cell '[' expr ']'	/* Check that not excessive brackets have been placed */
-			
+expr_full	:',' expr			{	if(mem.arg==NULL)								
+										yyerror("function expects less arguments");
+									if(!equalType($2.type,mem.arg->u.eParameter.type))	
+										yyerror("type mismatch in function arguments");
+									if(mem.arg->u.eParameter.mode==PASS_BY_REFERENCE && $2.lval==false)			
+										yyerror("parameter pass is by reference but argument is not an l-value");
+									mem.arg=mem.arg->u.eParameter.next;
+								}
+				expr_full
+			| /* nothing */		{	if(mem.arg!=NULL) yyerror("expected more arguments");}
+			;
+
+
+atom		: T_id			{	SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
+								if(s->entryType==ENTRY_FUNCTION) yyerror("identifier is a function and is not called properly");
+								$$.type=s->u.eVariable.type;
+								$$.lval=true;
+							}
+			| T_string		{$$.type=typeIArray(typeChar);	$$.lval=false;} /*FIXME: Array of char NOT IArray, set lexer to return size*/
+			| array_cell	{$$.type=$1;					$$.lval=true; }	/* we modified our grammar right here */
+			| call			{$$.type=$1;					$$.lval=false;}
+			;
+
+array_cell	: T_id '[' expr ']'			{	SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
+											if(!equalType($3.type,typeInteger)) yyerror("expression in brackets must be a non negative integer");
+											$$=s->u.eVariable.type->refType;
+										} 
+			| array_cell '[' expr ']'	{if(!equalType($3.type,typeInteger)) yyerror("expression in brackets must be a non negative integer");}
+										/* FIXME: Check that not excessive brackets have been placed */
+						
 
 /* check TYPES for all of the expression forms below */
-expr		: atom				{$$=$1;}
-			| T_int_const		{$$=typeInteger;}
-			| T_char_const		{$$=typeChar;}		
-			| '(' expr ')'		{$$=$2;} 
-			| '+' expr			{if(equalType($2,typeInteger)) $$=typeInteger; else yyerror("operator takes int");}
-			| '-' expr			{if(equalType($2,typeInteger)) $$=typeInteger; else yyerror("operator takes int");}
-			| expr '+' expr		{if(equalType($1,typeInteger) && equalType($3,typeInteger)) $$=typeInteger; else yyerror("operator takes int operands");}	
-			| expr '-' expr		{if(equalType($1,typeInteger) && equalType($3,typeInteger)) $$=typeInteger; else yyerror("operator takes int operands");}		
-			| expr '*' expr		{if(equalType($1,typeInteger) && equalType($3,typeInteger)) $$=typeInteger; else yyerror("operator takes int operands");}	
-			| expr '/' expr		{if(equalType($1,typeInteger) && equalType($3,typeInteger)) $$=typeInteger; else yyerror("operator takes int operands");}	
-			| expr "mod" expr	{if(equalType($1,typeInteger) && equalType($3,typeInteger)) $$=typeInteger; else yyerror("operator takes int operands");}	
-			| expr '=' expr		{if(equalType($1,$3)) $$=typeBoolean; else yyerror("type mismatch between operands");}
-			| expr "<>" expr	{if(equalType($1,$3)) $$=typeBoolean; else yyerror("type mismatch between operands");}
-			| expr '<' expr		{if(equalType($1,$3)) $$=typeBoolean; else yyerror("type mismatch between operands");}
-			| expr '>' expr		{if(equalType($1,$3)) $$=typeBoolean; else yyerror("type mismatch between operands");}
-			| expr "<=" expr	{if(equalType($1,$3)) $$=typeBoolean; else yyerror("type mismatch between operands");}
-			| expr ">=" expr	{if(equalType($1,$3)) $$=typeBoolean; else yyerror("type mismatch between operands");}
-			| "true"			{$$=typeBoolean;}
-			| "false"			{$$=typeBoolean;}
-			| "not" expr		{$$=typeBoolean;}
-			| expr "and" expr	{if(equalType($1,typeBoolean) && equalType($3,typeBoolean)) $$=typeBoolean; else yyerror("operator takes bbolean operands");}
-			| expr "or" expr	{if(equalType($1,typeBoolean) && equalType($3,typeBoolean)) $$=typeBoolean; else yyerror("operator takes bbolean operands");}
-			| "new" type '[' expr ']'	{if(equalType($4,typeInteger)) $$=typeIArray($2); else yyerror("array size must be integer whereas expression in brackets is not");}
-			| expr '#' expr				{if(equalType($3,typeList(typeAny)) && equalType($1,$3->refType)) $$=$3; else yyerror("type mismatch in list construction");}
-			| "nil"						{$$=typeList(typeAny);}
-			| "nil?" '(' expr ')'		{if(equalType($3,typeList(typeAny))) $$=typeBoolean; else yyerror("expression in brackets must be some list type");}
-			| "head" '(' expr ')'		{if(equalType($3,typeList(typeAny))) $$=$3->refType; else yyerror("expression in brackets must be some list type");}
-			| "tail" '(' expr ')'		{if(equalType($3,typeList(typeAny))) $$=$3;			else yyerror("expression in brackets must be some list type");}
+expr		: atom				{$$.type=$1.type;		$$.lval=$1.lval;}
+			| T_int_const		{$$.type=typeInteger;	$$.lval=false;  }
+			| T_char_const		{$$.type=typeChar;		$$.lval=false;  }		
+			| '(' expr ')'		{$$.type=$2.type;		$$.lval=false;  } 
+			| '+' expr			{if(equalType($2.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else yyerror("operator takes int");}
+			| '-' expr			{if(equalType($2.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else yyerror("operator takes int");}
+			| expr '+' expr		{if(equalType($1.type,typeInteger) && 
+									equalType($3.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else yyerror("operator takes int operands");}	
+			| expr '-' expr		{if(equalType($1.type,typeInteger) && 
+									equalType($3.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else yyerror("operator takes int operands");}		
+			| expr '*' expr		{if(equalType($1.type,typeInteger) && 
+									equalType($3.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else yyerror("operator takes int operands");}	
+			| expr '/' expr		{if(equalType($1.type,typeInteger) && 
+									equalType($3.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else yyerror("operator takes int operands");}	
+			| expr "mod" expr	{if(equalType($1.type,typeInteger) && 
+									equalType($3.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else yyerror("operator takes int operands");}	
+			| expr '=' expr		{if(!equalType($1.type,$3.type)) yyerror("type mismatch between operands");
+								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
+									yyerror("comparison allowed only between basic types");
+								 $$.type=typeBoolean;
+								 $$.lval=false;			}
+			| expr "<>" expr	{if(!equalType($1.type,$3.type)) yyerror("type mismatch between operands");
+								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
+									yyerror("comparison allowed only between basic types");
+								 $$.type=typeBoolean;
+								 $$.lval=false;			}
+
+			| expr '<' expr		{if(!equalType($1.type,$3.type)) yyerror("type mismatch between operands");
+								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
+									yyerror("comparison allowed only between basic types");
+								 $$.type=typeBoolean;
+								 $$.lval=false;			}
+
+			| expr '>' expr		{if(!equalType($1.type,$3.type)) yyerror("type mismatch between operands");
+								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
+									yyerror("comparison allowed only between basic types");
+								 $$.type=typeBoolean;
+								 $$.lval=false;			}
+
+			| expr "<=" expr	{if(!equalType($1.type,$3.type)) yyerror("type mismatch between operands");
+								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
+									yyerror("comparison allowed only between basic types");
+								 $$.type=typeBoolean;
+								 $$.lval=false;			}
+
+			| expr ">=" expr	{if(!equalType($1.type,$3.type)) yyerror("type mismatch between operands");
+								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
+									yyerror("comparison allowed only between basic types");
+								 $$.type=typeBoolean;
+								 $$.lval=false;			}
+
+			| "true"			{$$.type=typeBoolean;	$$.lval=false;}
+			| "false"			{$$.type=typeBoolean;	$$.lval=false;}
+			| "not" expr		{$$.type=typeBoolean;	$$.lval=false;}
+
+			| expr "and" expr	{if(equalType($1.type,typeBoolean) && equalType($3.type,typeBoolean)) {$$.type=typeBoolean; $$.lval=false;} 
+								 else yyerror("operator takes bbolean operands");}
+
+			| expr "or" expr	{if(equalType($1.type,typeBoolean) && equalType($3.type,typeBoolean)) {$$.type=typeBoolean; $$.lval=false;}
+								 else yyerror("operator takes bbolean operands");}
+
+			| "new" type '[' expr ']'	{if(equalType($4.type,typeInteger)) {$$.type=typeIArray($2); $$.lval=false;}
+										 else yyerror("array size must be integer whereas expression in brackets is not");}
+
+			| expr '#' expr				{if(equalType($3.type,typeList(typeAny)) && equalType($1.type,$3.type->refType)) 
+											{$$.type=$3.type; $$.lval=false;}
+										 else yyerror("type mismatch in list construction");}
+
+			| "nil"						{$$.type=typeList(typeAny);	$$.lval=false;}
+
+			| "nil?" '(' expr ')'		{if(equalType($3.type,typeList(typeAny))) {$$.type=typeBoolean; $$.lval=false;}
+										 else yyerror("expression in brackets must be some list type");}
+
+			| "head" '(' expr ')'		{if(equalType($3.type,typeList(typeAny))) {$$.type=$3.type->refType; $$.lval=false;}
+										 else yyerror("expression in brackets must be some list type");}
+
+			| "tail" '(' expr ')'		{if(equalType($3.type,typeList(typeAny))) {$$.type=$3.type;}			 
+										 else yyerror("expression in brackets must be some list type");}
 			
 
 /* function call limitations 
  * 1. T_id name of the function exists in current scope
- * 2. num of arguments in call is equal with num definition
- * 3. types of arguments passed are of the same type
- * 4. if arguments are passed by reference, they must be valid l-values
+ * 2. types of arguments passed are of the same type
+ * 3. if arguments are passed by reference, they must be valid l-values
  * /
 
 /* In each T_id allocation we must check if the specific T_id is uniqe = 1st time to be created. ONLY in T_id ALLOCAATION */
@@ -217,7 +340,7 @@ expr		: atom				{$$=$1;}
 %%
 
 extern FILE * yyin;
-
+extern linecount;
 
 const char * filename;
 
@@ -227,12 +350,11 @@ bool OFLAG = false;
 
 
 int yyerror(const char *msg){
-	fprintf(stderr,"syntax error: %s\n",msg);
+	fprintf(stderr,"in line: %d syntax error: %s\n",linecount,msg);
 	exit(1);
 }
 
 
-SymbolEntry * stemp;
 
 void parseArguments(int argc,char * argv[]){
 

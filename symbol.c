@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
+#include <stdlib.h>
 
 #include "general.h"
 #include "error.h"
@@ -446,8 +447,10 @@ SymbolEntry * lookupEntry (const char * name, LookupType type, bool err)
             break;
     }
     
-    if (err)
+    if (err){
         error("Unknown identifier: %s", name);
+		exit(1);
+	}
     return NULL;
 }
 

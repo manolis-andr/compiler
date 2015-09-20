@@ -159,6 +159,7 @@ struct Scope_tag {
     unsigned int   negOffset;                /* Τρέχον αρνητικό offset */
     Scope        * parent;                   /* Περιβάλλουσα εμβέλεια  */
     SymbolEntry  * entries;                  /* Σύμβολα της εμβέλειας  */
+	Type		   returnType;				 /* Τύπος επιστροφής δομικου μπλοκ που ορίζει την εμβέλεια */
 };
 
 
