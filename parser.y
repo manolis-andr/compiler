@@ -25,7 +25,7 @@ struct Memory{
 %union{
 	Type type;
 	const char * name;
-	struct Expr{
+	struct expr_struct {
 		Type	type;
 		bool	lval;
 	} expr;
@@ -225,13 +225,15 @@ expr_full	:',' expr			{	if(mem.arg==NULL)
 									mem.arg=mem.arg->u.eParameter.next;
 								}
 				expr_full
-			| /* nothing */		{	if(mem.arg!=NULL) yyerror("expected more arguments");}
+			| /* nothing */		{	if(mem.arg!=NULL) yyerror("function expects more arguments");}
 			;
 
 
 atom		: T_id			{	SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
-								if(s->entryType==ENTRY_FUNCTION) yyerror("identifier is a function and is not called properly");
-								$$.type=s->u.eVariable.type;
+								switch(s->entryType)
+									case(ENTRY_FUNCTION):	yyerror("identifier is a function and is not called properly");
+									case(ENTRY_VARIABLE):	$$.type=s->u.eVariable.type;
+									case(ENTRY_PARAMETER):	$$.type=s->u.eParameter.type;
 								$$.lval=true;
 							}
 			| T_string		{$$.type=typeIArray(typeChar);	$$.lval=false;} /*FIXME: Array of char NOT IArray, set lexer to return size*/
@@ -339,10 +341,11 @@ expr		: atom				{$$.type=$1.type;		$$.lval=$1.lval;}
 
 %%
 
-extern FILE * yyin;
-extern linecount;
+extern FILE *	yyin;
+extern char		lastWhitespace;
+extern char *	yytext;
 
-const char * filename;
+const char *	filename;
 
 bool FFLAG = false;
 bool IFLAG = false;
@@ -350,7 +353,10 @@ bool OFLAG = false;
 
 
 int yyerror(const char *msg){
-	fprintf(stderr,"in line: %d syntax error: %s\n",linecount,msg);
+	/* Fixes the case in which the tokens' separator is '\n' */
+	int errLine = linecount;
+	if(lastWhitespace=='\n') errLine--;
+	fprintf(stderr,"line: %d syntax error: %s\n",errLine,msg);
 	exit(1);
 }
 

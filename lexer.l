@@ -7,6 +7,7 @@
 #define T_eof	0
 
 int linecount=1;
+char lastWhitespace=' ';
 int nesting;
 
 %}
@@ -75,8 +76,8 @@ ESCAPE \\(n|t|r|0|\\|\'|\"|x{HEX}{HEX})
 <COMMENT>"*"	{ /* nothing */ }
 <COMMENT>[^*\n]	{ /* nothing */ }
 
-{W}+			{ /* nothing */ }
-\n				{ linecount++; }
+{W}				{ lastWhitespace=yytext[0]; }
+\n				{ linecount++; lastWhitespace='\n'; }
 
 <<EOF>>			{ return T_eof; }
 

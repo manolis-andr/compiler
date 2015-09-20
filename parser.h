@@ -91,7 +91,7 @@ union YYSTYPE
 
 	Type type;
 	const char * name;
-	struct Expr{
+	struct expr_struct {
 		Type	type;
 		bool	lval;
 	} expr;
