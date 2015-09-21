@@ -11,7 +11,7 @@ ifeq ($(DEBUG),1)
 	CFLAGS+= -g -DDEBUG
 endif
 
-parser: parser.o lexer.o symbol.o general.o error.o
+parser: parser.o lexer.o symbol.o general.o error.o intermediate.o
 	$(CC) $(CFLAGS) -o $@ $^ -lfl
 
 parser.c: parser.y
@@ -21,6 +21,9 @@ lexer.c: lexer.l parser.h
 	flex -s -o $@ $<
 
 symbol.o: symbol.c error.o general.o
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+intermediate.o: intermediate.c error.o general.o 
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 %.o: %.c

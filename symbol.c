@@ -258,9 +258,6 @@ SymbolEntry * newConstant (const char * name, Type type, ...)
         RepString  vString;
     } value;
     
-	if(name!=NULL){
-	}
-
     va_start(ap, type);
     switch (type->kind) {
         case TYPE_INTEGER:
@@ -272,6 +269,7 @@ SymbolEntry * newConstant (const char * name, Type type, ...)
         case TYPE_CHAR:
             value.vChar = va_arg(ap, int);        /* RepChar is promoted */
             break;
+		case TYPE_IARRAY:
         case TYPE_ARRAY:
             if (equalType(type->refType, typeChar)) {
                 RepString str = va_arg(ap, RepString);
@@ -312,12 +310,16 @@ SymbolEntry * newConstant (const char * name, Type type, ...)
 		e = lookupEntry(buffer,LOOKUP_ALL_SCOPES,false);
 		if(e==NULL)	
 	        e = newEntry(buffer);
+		else
+			return e;
     }
     else{
 		/* Our addition: Construct only one instance for each different value */
 		e = lookupEntry(name,LOOKUP_ALL_SCOPES,false);
 		if(e==NULL)	
 			e = newEntry(name);
+		else 
+			return e;
     }
 
     if (e != NULL) {

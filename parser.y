@@ -10,6 +10,7 @@
 #include "symbol.h"
 #include "error.h"
 #include "general.h"
+#include "intermediate.h"
 
 /* Struct for remembering previous symbol table options, when we dig deeper into the symbols */
 struct Memory{
@@ -42,8 +43,11 @@ Type findArrayType(Type arrayType,int brackets)
 	const char * name;
 	int val;
 	struct expr_struct {
-		Type	type;
-		bool	lval;
+		SymbolEntry *	place;
+		Type			type;
+		List *			TRUE;
+		List *			FALSE;
+		bool			lval;
 	} expr;
 }
 
@@ -101,7 +105,11 @@ Type findArrayType(Type arrayType,int brackets)
 
 %%
 
-program		: {openScope();} func_def {closeScope();};
+program		: {openScope();} func_def {closeScope();}
+
+/* -------------------------------------------------------------------------------------------------------------------------------- 
+ *	BLOCK DEFINITION (FUNCTIONS)
+ * -------------------------------------------------------------------------------------------------------------------------------- */ 
 
 func_def	: "def" {mem.forward=0;} header ':' def_list stmt_list "end" {closeScope();} ;
 
@@ -141,8 +149,12 @@ id_par_list : T_id {if(lookupEntry($1,LOOKUP_CURRENT_SCOPE,false)!=NULL) ssmerro
 id_par_full : ',' T_id {if(lookupEntry($2,LOOKUP_CURRENT_SCOPE,false)!=NULL) ssmerror("duplicate declaration of identifier in current scope"); 
 						 newParameter($2,mem.type,mem.ref,mem.func);} 
 				id_par_full 
-			| /* nothing */ ;
+			| /* nothing */ 
 
+
+/* -------------------------------------------------------------------------------------------------------------------------------- 
+ *	TYPES & VARIABLES
+ * -------------------------------------------------------------------------------------------------------------------------------- */ 
 
 type		: "int"					{$$=typeInteger;}
 			| "bool"				{$$=typeBoolean;}
@@ -174,7 +186,11 @@ id_full		: ',' T_id	{if(lookupEntry($2,LOOKUP_CURRENT_SCOPE,false)!=NULL)
 						} 
 				id_full 
 			| /* nothing */
-			;
+			
+
+/* -------------------------------------------------------------------------------------------------------------------------------- 
+ *	STATEMENTS
+ * -------------------------------------------------------------------------------------------------------------------------------- */ 
 
 
 stmt_list	: stmt stmt_full
@@ -219,6 +235,13 @@ simple		: "skip"
 simple_list	: simple simple_full ; 
 simple_full	: ',' simple simple_full | /* nothing */
 
+
+
+/* -------------------------------------------------------------------------------------------------------------------------------- 
+ *	FUNCTION CALLS
+ * -------------------------------------------------------------------------------------------------------------------------------- */ 
+
+
 			/* check that T_id is ENTRY_FUNCTION && check function call limitations */
 call		: T_id '('			{	SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
 									if(s->entryType!=ENTRY_FUNCTION) ssmerror("identifier is not a function");
@@ -256,7 +279,12 @@ expr_full	:',' expr			{	if(mem.arg==NULL)
 								}
 				expr_full
 			| /* nothing */		{	if(mem.arg!=NULL) sserror("function expects more arguments");}
-			;
+
+
+
+/* -------------------------------------------------------------------------------------------------------------------------------- 
+ * ATOMS & EXPRESSIONS
+ * -------------------------------------------------------------------------------------------------------------------------------- */ 
 
 
 atom		: T_id			{	SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
@@ -266,8 +294,9 @@ atom		: T_id			{	SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 									case(ENTRY_PARAMETER):	$$.type=s->u.eParameter.type;
 								}
 								$$.lval=true;
+								/*I*/$$.place=s;
 							}
-			| T_string		{$$.type=typeIArray(typeChar);	$$.lval=false;	newConstant(NULL,$$.type,$1);} 
+			| T_string		{$$.type=typeIArray(typeChar);	$$.lval=false;	SymbolEntry * s = newConstant(NULL,$$.type,$1);	/*I*/$$.place=s;} 
 			| array_cell	{$$.type=$1;					$$.lval=true; }	/* we modified our grammar right here */
 			| call			{$$.type=$1;					$$.lval=false;}
 			;
@@ -287,65 +316,126 @@ brackets	: '[' expr ']' brackets {$$=$4+1;	if(!equalType($2.type,typeInteger)) s
 						
 
 /* check TYPES for all of the expression forms below */
-expr		: atom				{$$.type=$1.type;		$$.lval=$1.lval;}
-			| T_int_const		{$$.type=typeInteger;	$$.lval=false;	newConstant(NULL,typeInteger,$1); }
-			| T_char_const		{$$.type=typeChar;		$$.lval=false;  newConstant(NULL,typeChar,$1);    }		
-			| '(' expr ')'		{$$.type=$2.type;		$$.lval=false;  } 
-			| '+' expr			{if(equalType($2.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else sserror("operator takes int");}
-			| '-' expr			{if(equalType($2.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else sserror("operator takes int");}
-			| expr '+' expr		{if(equalType($1.type,typeInteger) && 
-									equalType($3.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else sserror("operator takes int operands");}	
-			| expr '-' expr		{if(equalType($1.type,typeInteger) && 
-									equalType($3.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else sserror("operator takes int operands");}		
-			| expr '*' expr		{if(equalType($1.type,typeInteger) && 
-									equalType($3.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else sserror("operator takes int operands");}	
-			| expr '/' expr		{if(equalType($1.type,typeInteger) && 
-									equalType($3.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else sserror("operator takes int operands");}	
-			| expr "mod" expr	{if(equalType($1.type,typeInteger) && 
-									equalType($3.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else sserror("operator takes int operands");}	
+expr		: atom				{$$.type=$1.type;		$$.lval=$1.lval;/*I*/$$.place = $1.place;}
+			| T_int_const		{$$.type=typeInteger;	$$.lval=false;	/*I*/$$.place = newConstant(NULL,typeInteger,$1);	}
+			| T_char_const		{$$.type=typeChar;		$$.lval=false;  /*I*/$$.place = newConstant(NULL,typeChar,$1);		}		
+			| '(' expr ')'		{$$.type=$2.type;		$$.lval=false;  /*I*/$$.place=$2.place; } 
+			| '+' expr			{if(equalType($2.type,typeInteger)) {$$.type=typeInteger; $$.lval=false; $$.place=$2.place;}	else sserror("operator takes int");}
+			| '-' expr			{if(!equalType($2.type,typeInteger)) sserror("operator works only on int operands");
+								 $$.type=typeInteger; 
+								 $$.lval=false;
+								 /*I*/SymbolEntry * w = newTemporary(typeInteger);
+								 genquad("-",oS(newConstant(NULL,typeInteger,0)),oS($2.place),oS(w));
+								 $$.place=w; /*I*/
+								}	
+			| expr '+' expr		{if(!equalType($1.type,typeInteger) || !equalType($3.type,typeInteger)) sserror("operator work only on int operands");
+								 $$.type=typeInteger; 
+								 $$.lval=false;
+								 /*I*/SymbolEntry * w = newTemporary(typeInteger);
+								 genquad("+",oS($1.place),oS($3.place),oS(w));
+								 $$.place=w; /*I*/
+								}	
+			| expr '-' expr		{if(!equalType($1.type,typeInteger) || !equalType($3.type,typeInteger)) sserror("operator works only on int operands");
+								 $$.type=typeInteger; 
+								 $$.lval=false;
+								 /*I*/SymbolEntry * w = newTemporary(typeInteger);
+								 genquad("-",oS($1.place),oS($3.place),oS(w));
+								 $$.place=w; /*I*/
+								}	
+			| expr '*' expr		{if(!equalType($1.type,typeInteger) || !equalType($3.type,typeInteger)) sserror("operator works only on int operands");
+								 $$.type=typeInteger; 
+								 $$.lval=false;
+								 /*I*/SymbolEntry * w = newTemporary(typeInteger);
+								 genquad("*",oS($1.place),oS($3.place),oS(w));
+								 $$.place=w; /*I*/
+								}	
+			| expr '/' expr		{if(!equalType($1.type,typeInteger) || !equalType($3.type,typeInteger)) sserror("operator works only on int operands");
+								 $$.type=typeInteger; 
+								 $$.lval=false;
+								 /*I*/SymbolEntry * w = newTemporary(typeInteger);
+								 genquad("/",oS($1.place),oS($3.place),oS(w));
+								 $$.place=w; /*I*/
+								}	
+			| expr "mod" expr	{if(!equalType($1.type,typeInteger) || !equalType($3.type,typeInteger)) sserror("operator works only on int operands");
+								 $$.type=typeInteger; 
+								 $$.lval=false;
+								 /*I*/SymbolEntry * w = newTemporary(typeInteger);
+								 genquad("-",oS($1.place),oS($3.place),oS(w));
+								 $$.place=w; /*I*/
+								}	
 			| expr '=' expr		{if(!equalType($1.type,$3.type)) 
 									sserror("type mismatch between operands: arg1 %s arg2 %s",typeToStr($1.type),typeToStr($3.type));
 								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
 									sserror("comparison allowed only between basic types");
 								 $$.type=typeBoolean;
-								 $$.lval=false;			}
+								 $$.lval=false;
+								 /*I*/$$.TRUE = makelist(quadNext);
+								 genquad("=",oS($1.place),oS($3.place),oSTAR);
+								 $$.FALSE = makelist(quadNext);
+								 genquad("jump",o_,o_,oSTAR);/*I*/
+								 }
 			| expr "<>" expr	{if(!equalType($1.type,$3.type)) 
 									sserror("type mismatch between operands: arg1 %s arg2 %s",typeToStr($1.type),typeToStr($3.type));
 								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
 									sserror("comparison allowed only between basic types");
 								 $$.type=typeBoolean;
-								 $$.lval=false;			}
+								 $$.lval=false;			
+								 /*I*/$$.TRUE = makelist(quadNext);
+								 genquad("<>",oS($1.place),oS($3.place),oSTAR);
+								 $$.FALSE = makelist(quadNext);
+								 genquad("jump",o_,o_,oSTAR);/*I*/
+								 }
 
 			| expr '<' expr		{if(!equalType($1.type,$3.type)) 
 									sserror("type mismatch between operands: arg1 %s arg2 %s",typeToStr($1.type),typeToStr($3.type));
 								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
 									sserror("comparison allowed only between basic types");
 								 $$.type=typeBoolean;
-								 $$.lval=false;			}
+								 $$.lval=false;			
+								 /*I*/$$.TRUE = makelist(quadNext);
+								 genquad("<",oS($1.place),oS($3.place),oSTAR);
+								 $$.FALSE = makelist(quadNext);
+								 genquad("jump",o_,o_,oSTAR);/*I*/
+								 }
 
 			| expr '>' expr		{if(!equalType($1.type,$3.type))
 									sserror("type mismatch between operands: arg1 %s arg2 %s",typeToStr($1.type),typeToStr($3.type));
 								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
 									sserror("comparison allowed only between basic types");
 								 $$.type=typeBoolean;
-								 $$.lval=false;			}
+								 $$.lval=false;			
+								 /*I*/$$.TRUE = makelist(quadNext);
+								 genquad(">",oS($1.place),oS($3.place),oSTAR);
+								 $$.FALSE = makelist(quadNext);
+								 genquad("jump",o_,o_,oSTAR);/*I*/
+								 }
 
 			| expr "<=" expr	{if(!equalType($1.type,$3.type))
 									sserror("type mismatch between operands: arg1 %s arg2 %s",typeToStr($1.type),typeToStr($3.type));
 								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
 									sserror("comparison allowed only between basic types");
 								 $$.type=typeBoolean;
-								 $$.lval=false;			}
+								 $$.lval=false;			
+								 /*I*/$$.TRUE = makelist(quadNext);
+								 genquad("<=",oS($1.place),oS($3.place),oSTAR);
+								 $$.FALSE = makelist(quadNext);
+								 genquad("jump",o_,o_,oSTAR);/*I*/
+								 }
 
 			| expr ">=" expr	{if(!equalType($1.type,$3.type)) 
 									sserror("type mismatch between operands: arg1 %s arg2 %s",typeToStr($1.type),typeToStr($3.type));
 								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
 									sserror("comparison allowed only between basic types");
 								 $$.type=typeBoolean;
-								 $$.lval=false;			}
+								 $$.lval=false;			
+								 /*I*/$$.TRUE = makelist(quadNext);
+								 genquad(">=",oS($1.place),oS($3.place),oSTAR);
+								 $$.FALSE = makelist(quadNext);
+								 genquad("jump",o_,o_,oSTAR);/*I*/
+								 }
 
-			| "true"			{$$.type=typeBoolean;	$$.lval=false;}
-			| "false"			{$$.type=typeBoolean;	$$.lval=false;}
+			| "true"			{$$.type=typeBoolean;	$$.lval=false;	$$.place=newConstant("true",typeBoolean,"true");}
+			| "false"			{$$.type=typeBoolean;	$$.lval=false;	$$.place=newConstant("false",typeBoolean,"false");}
 			| "not" expr		{$$.type=typeBoolean;	$$.lval=false;}
 
 			| expr "and" expr	{if(equalType($1.type,typeBoolean) && equalType($3.type,typeBoolean)) {$$.type=typeBoolean; $$.lval=false;} 
@@ -430,7 +520,6 @@ void parseArguments(int argc,char * argv[]){
 
 
 int main(int argc, char * argv[]){
-
 
 	/* Arguments parsing */
 	parseArguments(argc,argv);

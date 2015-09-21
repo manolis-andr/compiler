@@ -3,6 +3,7 @@
 #include <stdlib.h>
 
 #include "symbol.h"
+#include "intermediate.h"
 #include "parser.h"
 #define T_eof	0
 
