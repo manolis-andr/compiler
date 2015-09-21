@@ -87,16 +87,17 @@ extern int yydebug;
 typedef union YYSTYPE YYSTYPE;
 union YYSTYPE
 {
-#line 25 "parser.y" /* yacc.c:1909  */
+#line 40 "parser.y" /* yacc.c:1909  */
 
 	Type type;
 	const char * name;
+	int val;
 	struct expr_struct {
 		Type	type;
 		bool	lval;
 	} expr;
 
-#line 100 "parser.h" /* yacc.c:1909  */
+#line 101 "parser.h" /* yacc.c:1909  */
 };
 # define YYSTYPE_IS_TRIVIAL 1
 # define YYSTYPE_IS_DECLARED 1

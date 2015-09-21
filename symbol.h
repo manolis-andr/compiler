@@ -84,7 +84,7 @@ struct Type_tag {
 
 typedef enum {            
    ENTRY_VARIABLE,                       /* Μεταβλητές                 */
-										 /* Σταθερές ΟΧΙ			   */
+   ENTRY_CONSTANT,                       /* Σταθερές		           */
    ENTRY_FUNCTION,                       /* Συναρτήσεις                */
    ENTRY_PARAMETER,                      /* Παράμετροι συναρτήσεων     */
    ENTRY_TEMPORARY                       /* Προσωρινές μεταβλητές      */
@@ -118,7 +118,15 @@ struct SymbolEntry_tag {
          int           offset;                /* Offset στο Ε.Δ.       */
       } eVariable;
 
-			                                  /****** Σταθερές ΟΧΙ *****/
+      struct {                                /******** Σταθερά ********/
+         Type          type;                  /* Τύπος                 */
+         union {                              /* Τιμή                  */
+            RepInteger vInteger;              /*    ακέραια            */
+            RepBoolean vBoolean;              /*    λογική             */
+            RepChar    vChar;                 /*    χαρακτήρας         */
+            RepString  vString;               /*    συμβολοσειρά       */
+         } value;
+      } eConstant;
 
       struct {                                /******* Συνάρτηση *******/
          bool          isForward;             /* Δήλωση forward        */
@@ -197,6 +205,7 @@ void          openScope          (void);
 void          closeScope         (void);
 
 SymbolEntry * newVariable        (const char * name, Type type);
+SymbolEntry * newConstant        (const char * name, Type type, ...);
 SymbolEntry * newFunction        (const char * name);
 SymbolEntry * newParameter       (const char * name, Type type,
                                   PassMode mode, SymbolEntry * f);
@@ -217,5 +226,6 @@ bool          equalType          (Type type1, Type type2);
 void          printType          (Type type);
 void          printMode          (PassMode mode);
 
+const char *  typeToStr			 (Type type);
 
 #endif

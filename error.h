@@ -32,5 +32,8 @@ void fatal    (const char * fmt, ...);
 void error    (const char * fmt, ...);
 void warning  (const char * fmt, ...);
 
+void sserror  (const char * fmt, ...);
+void ssmerror (const char * fmt, ...);
+
 
 #endif

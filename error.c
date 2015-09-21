@@ -30,6 +30,8 @@
 #include "general.h"
 #include "error.h"
 
+extern char lastWhitespace;
+extern char * yytext;
 
 /* ---------------------------------------------------------------------
    --------- Υλοποίηση των συναρτήσεων του χειριστή σφαλμάτων ----------
@@ -95,4 +97,48 @@ void warning (const char * fmt, ...)
    vfprintf(stderr, fmt, ap);
    fprintf(stderr, "\n");
    va_end(ap);
+}
+
+
+/* Our additions */
+/* ************* */
+
+void sserror(const char * fmt, ...)
+{
+   va_list ap;
+
+   va_start(ap, fmt);
+   if (fmt[0] == '\r')
+      fmt++;
+   else{
+	int errLine = linecount;
+	if(lastWhitespace=='\n') 
+		errLine--;
+    fprintf(stderr, "%s:%d: ", filename, errLine);
+   }
+   fprintf(stderr, "semantic error, ");
+   vfprintf(stderr, fmt, ap);
+   fprintf(stderr, "\n");
+   va_end(ap);
+   exit(1);
+}
+
+
+/* Semantic error traced in the middle of a rule 
+ * (before the rule is parsed completely) */
+void ssmerror(const char * fmt, ...)
+{
+   va_list ap;
+
+   va_start(ap, fmt);
+   if (fmt[0] == '\r')
+      fmt++;
+   else{
+    fprintf(stderr, "%s:%d: ", filename, linecount);
+   }
+   fprintf(stderr, "semantic error, ");
+   vfprintf(stderr, fmt, ap);
+   fprintf(stderr, "\n");
+   va_end(ap);
+   exit(1);
 }

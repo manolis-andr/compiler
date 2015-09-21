@@ -6,9 +6,9 @@
 #include "parser.h"
 #define T_eof	0
 
-int linecount=1;
+int  linecount=1;
 char lastWhitespace=' ';
-int nesting;
+int  nesting;
 
 %}
 
@@ -52,36 +52,36 @@ ESCAPE \\(n|t|r|0|\\|\'|\"|x{HEX}{HEX})
 
 {L}({L}|{D}|_|\?)*	{ yylval.name=strdup(yytext); return T_id;}
 
-{D}+		{ return T_int_const; }
+{D}+				{ yylval.val=atoi(yytext); return T_int_const; }
 
-\"([^\n\"\'\\]|{ESCAPE})*\" { return T_string; }
+\"([^\n\"\'\\]|{ESCAPE})*\" { yylval.name=strdup(yytext); return T_string; }
 
-\'([^\"\'\\]|{ESCAPE})\' { return T_char_const; }
+\'([^\"\'\\]|{ESCAPE})\'	{ yylval.val=yytext[1];	return T_char_const; }
 
  
 [+|\-|*|/|#|=|<|>]	{ return yytext[0]; }
-"<="			{ return T_le;}
-">="			{ return T_ge;}
-"<>"			{ return T_ne;}
+"<="				{ return T_le;	}
+">="				{ return T_ge;}
+"<>"				{ return T_ne;}
 
 [\(|\)|\[|\]|,|;|:]	{ return yytext[0]; }
-":="			{ return T_assign; }
+":="				{ return T_assign; }
 
-%[^\n]*\n		{ /* nothing */ linecount++; }
+%[^\n]*\n			{ /* nothing */ linecount++; }
 
-"<*"			{ nesting=1;  BEGIN(COMMENT);}
-<COMMENT>"<*"	{ nesting++; }
-<COMMENT>"*>"	{ nesting--; if(nesting==0) BEGIN(INITIAL); }
-<COMMENT>"\n"	{ linecount++; }
-<COMMENT>"*"	{ /* nothing */ }
-<COMMENT>[^*\n]	{ /* nothing */ }
+"<*"				{ nesting=1;  BEGIN(COMMENT);}
+<COMMENT>"<*"		{ nesting++; }
+<COMMENT>"*>"		{ nesting--; if(nesting==0) BEGIN(INITIAL); }
+<COMMENT>"\n"		{ linecount++; }
+<COMMENT>"*"		{ /* nothing */ }
+<COMMENT>[^*\n]		{ /* nothing */ }
 
-{W}				{ lastWhitespace=yytext[0]; }
-\n				{ linecount++; lastWhitespace='\n'; }
+{W}					{ lastWhitespace=yytext[0]; }
+\n					{ linecount++; lastWhitespace='\n'; }
 
-<<EOF>>			{ return T_eof; }
+<<EOF>>				{ return T_eof; }
 
-.				{ yyerror("char not recognised"); } 
+.					{ yyerror("char not recognised"); } 
 
 %%
 

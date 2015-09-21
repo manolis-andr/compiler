@@ -246,6 +246,104 @@ SymbolEntry * newVariable (const char * name, Type type)
     return e;
 }
 
+SymbolEntry * newConstant (const char * name, Type type, ...)
+{
+    SymbolEntry * e;
+    va_list ap;
+
+    union {
+        RepInteger vInteger;
+        RepBoolean vBoolean;
+        RepChar    vChar;
+        RepString  vString;
+    } value;
+    
+	if(name!=NULL){
+	}
+
+    va_start(ap, type);
+    switch (type->kind) {
+        case TYPE_INTEGER:
+            value.vInteger = va_arg(ap, RepInteger);
+            break;
+        case TYPE_BOOLEAN:
+            value.vBoolean = va_arg(ap, int);     /* RepBool is promoted */
+            break;
+        case TYPE_CHAR:
+            value.vChar = va_arg(ap, int);        /* RepChar is promoted */
+            break;
+        case TYPE_ARRAY:
+            if (equalType(type->refType, typeChar)) {
+                RepString str = va_arg(ap, RepString);
+                
+                value.vString = (const char *) new(strlen(str) + 1);
+                strcpy((char *) (value.vString), str);
+                break;
+            }
+        default:
+            internal("Invalid type for constant");
+    }
+    va_end(ap);
+
+    if (name == NULL) {
+        char buffer[256];
+        
+        switch (type->kind) {
+            case TYPE_INTEGER:
+                sprintf(buffer, "%d", value.vInteger);
+                break;
+            case TYPE_BOOLEAN:
+                if (value.vBoolean)
+                    sprintf(buffer, "true");
+                else
+                    sprintf(buffer, "false");
+                break;
+            case TYPE_CHAR:
+                strcpy(buffer, "'");
+                strAppendChar(buffer, value.vChar);
+                strcat(buffer, "'");
+                break;
+            case TYPE_ARRAY:
+                strcpy(buffer, "\"");
+                strAppendString(buffer, value.vString);
+                strcat(buffer, "\"");           
+        }
+		/* Our addition: Construct only one instance for each different value */
+		e = lookupEntry(buffer,LOOKUP_ALL_SCOPES,false);
+		if(e==NULL)	
+	        e = newEntry(buffer);
+    }
+    else{
+		/* Our addition: Construct only one instance for each different value */
+		e = lookupEntry(name,LOOKUP_ALL_SCOPES,false);
+		if(e==NULL)	
+			e = newEntry(name);
+    }
+
+    if (e != NULL) {
+        e->entryType = ENTRY_CONSTANT;
+        e->u.eConstant.type = type;
+        type->refCount++;
+        switch (type->kind) {
+            case TYPE_INTEGER:
+                e->u.eConstant.value.vInteger = value.vInteger;
+                break;
+            case TYPE_BOOLEAN:
+                e->u.eConstant.value.vBoolean = value.vBoolean;
+                break;
+            case TYPE_CHAR:
+                e->u.eConstant.value.vChar = value.vChar;
+                break;
+            case TYPE_ARRAY:
+                e->u.eConstant.value.vString = value.vString;
+        }
+    }
+    return e;
+}
+
+
+
+
 SymbolEntry * newFunction (const char * name)
 {
     SymbolEntry * e = lookupEntry(name, LOOKUP_CURRENT_SCOPE, false);
@@ -402,6 +500,11 @@ void destroyEntry (SymbolEntry * e)
         case ENTRY_VARIABLE:
             destroyType(e->u.eVariable.type);
             break;
+        case ENTRY_CONSTANT:
+            if (e->u.eConstant.type->kind == TYPE_ARRAY)
+                delete((char *) (e->u.eConstant.value.vString));
+            destroyType(e->u.eConstant.type);
+            break;
         case ENTRY_FUNCTION:
             args = e->u.eFunction.firstArgument;
             while (args != NULL) {
@@ -525,15 +628,24 @@ unsigned int sizeOfType (Type type)
 
 bool equalType (Type type1, Type type2)
 {
+	/* We added: a recursive typecheking for lists and arrays and
+	 *			 compatibility with TYPE_ANY that is always equal with any type
+	 */
+	if(type1->kind==TYPE_ANY || type2->kind==TYPE_ANY)
+		return true;
+
     if (type1->kind != type2->kind)
         return false;
     switch (type1->kind) {
         case TYPE_ARRAY:
             if (type1->size != type2->size)
                 return false;
+			else
+				return equalType(type1->refType,type2->refType);
         case TYPE_IARRAY:
+			return equalType(type1->refType,type2->refType);
 		case TYPE_LIST:
-		;
+			return equalType(type1->refType,type2->refType);
     }
     return true;        
 }
@@ -575,6 +687,48 @@ void printType (Type type)
 			break;
     }
 }
+
+const char * typeToStr (Type type)
+{
+    if (type == NULL) {
+        return "<undefined>";
+    }
+    
+	char buf[256];
+    switch (type->kind) {
+        case TYPE_VOID:
+            return "void";
+            break;
+        case TYPE_INTEGER:
+            return "integer";
+            break;
+        case TYPE_BOOLEAN:
+            return "boolean";
+            break;
+        case TYPE_CHAR:
+            return "char";
+            break;
+        case TYPE_ARRAY:
+			sprintf(buf,"array [%d] of %s",type->size,typeToStr(type->refType));
+			return strdup(buf);
+            break;
+        case TYPE_IARRAY:
+			sprintf(buf,"array of %s",typeToStr(type->refType));
+			return strdup(buf);
+            break;
+		case TYPE_LIST:
+			sprintf(buf,"list of %s",typeToStr(type->refType));
+			return strdup(buf);
+			break;
+		case TYPE_ANY:
+			return "any type, (strictly for lists) ";
+			break;
+    }
+	return "undefined";
+}
+
+
+
 
 void printMode (PassMode mode)
 {
