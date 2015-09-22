@@ -2,18 +2,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "symbol.h"
 #include "parser.h"
 #define T_eof	0
 
-
-
-int nesting;
+int  linecount=1;
+char lastWhitespace=' ';
+int  nesting;
 
 %}
 
 L [A-Za-z]		
 D [0-9]			
-W [ \t\n\r]		
+W [ \t\r]		
 HEX [0-9|A-F|a-f] 	
 ESCAPE \\(n|t|r|0|\\|\'|\"|x{HEX}{HEX})
 
@@ -49,36 +50,38 @@ ESCAPE \\(n|t|r|0|\\|\'|\"|x{HEX}{HEX})
 "elsif"		{ return T_elsif; }
 
 
-{L}({L}|{D}|_|\?)*	{return T_id;}
+{L}({L}|{D}|_|\?)*	{ yylval.name=strdup(yytext); return T_id;}
 
-{D}+		{ return T_int_const; }
+{D}+				{ yylval.val=atoi(yytext); return T_int_const; }
 
-\"([^\n\"\'\\]|{ESCAPE})*\" { return T_string; }
+\"([^\n\"\'\\]|{ESCAPE})*\" { yylval.name=strdup(yytext); return T_string; }
 
-\'([^\"\'\\]|{ESCAPE})\' { return T_char_const; }
+\'([^\"\'\\]|{ESCAPE})\'	{ yylval.val=yytext[1];	return T_char_const; }
 
  
 [+|\-|*|/|#|=|<|>]	{ return yytext[0]; }
-"<="			{ return T_le;}
-">="			{ return T_ge;}
-"<>"			{ return T_ne;}
+"<="				{ return T_le;	}
+">="				{ return T_ge;}
+"<>"				{ return T_ne;}
 
 [\(|\)|\[|\]|,|;|:]	{ return yytext[0]; }
-":="			{ return T_assign; }
+":="				{ return T_assign; }
 
-%[^\n]*\n		{ /* nothing */ }
+%[^\n]*\n			{ /* nothing */ linecount++; }
 
-"<*"			{ nesting=1;  BEGIN(COMMENT);}
-<COMMENT>"<*"	{ nesting++; }
-<COMMENT>"*>"	{ nesting--; if(nesting==0) BEGIN(INITIAL); }
-<COMMENT>"*"	{ /* nothing */ }
-<COMMENT>[^*]	{ /* nothing */ }
+"<*"				{ nesting=1;  BEGIN(COMMENT);}
+<COMMENT>"<*"		{ nesting++; }
+<COMMENT>"*>"		{ nesting--; if(nesting==0) BEGIN(INITIAL); }
+<COMMENT>"\n"		{ linecount++; }
+<COMMENT>"*"		{ /* nothing */ }
+<COMMENT>[^*\n]		{ /* nothing */ }
 
-{W}+			{ /* nothing */ }
+{W}					{ lastWhitespace=yytext[0]; }
+\n					{ linecount++; lastWhitespace='\n'; }
 
-<<EOF>>			{ return T_eof; }
+<<EOF>>				{ return T_eof; }
 
-.				{ yyerror("char not recognised"); } 
+.					{ yyerror("char not recognised"); } 
 
 %%
 
