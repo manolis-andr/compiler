@@ -87,20 +87,25 @@ extern int yydebug;
 typedef union YYSTYPE YYSTYPE;
 union YYSTYPE
 {
-#line 41 "parser.y" /* yacc.c:1909  */
+#line 64 "parser.y" /* yacc.c:1909  */
 
 	Type type;
 	const char * name;
 	int val;
-	struct expr_struct {
+	struct expr_tag {
 		SymbolEntry *	place;
 		Type			type;
-		List *			TRUE;
-		List *			FALSE;
 		bool			lval;
 	} expr;
+	struct cond_tag {
+		List *			TRUE;
+		List *			FALSE;
+	}cond;
+	struct stmt_tag {
+		List *			NEXT;
+	}stmt;
 
-#line 104 "parser.h" /* yacc.c:1909  */
+#line 109 "parser.h" /* yacc.c:1909  */
 };
 # define YYSTYPE_IS_TRIVIAL 1
 # define YYSTYPE_IS_DECLARED 1

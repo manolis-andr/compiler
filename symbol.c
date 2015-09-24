@@ -586,6 +586,17 @@ Type typeIArray (Type refType)
     return n;
 }
 
+Type typePointer(Type refType)
+{
+	Type n = (Type) new(sizeof(struct Type_tag));
+
+	n->kind		= TYPE_POINTER;
+	n->refType	= refType;
+	n->refCount = 1;
+
+	refType->refCount++;
+}
+
 Type typeList (Type refType)
 {
 	Type n = (Type) new(sizeof(struct Type_tag));
@@ -617,7 +628,8 @@ unsigned int sizeOfType (Type type)
             break;
         case TYPE_INTEGER:
         case TYPE_IARRAY:
-		case TYPE_LIST:
+		case TYPE_POINTER:
+			return 2;
 		case TYPE_ANY:
         case TYPE_BOOLEAN:
         case TYPE_CHAR:
@@ -645,6 +657,8 @@ bool equalType (Type type1, Type type2)
 			else
 				return equalType(type1->refType,type2->refType);
         case TYPE_IARRAY:
+			return equalType(type1->refType,type2->refType);
+		case TYPE_POINTER:
 			return equalType(type1->refType,type2->refType);
 		case TYPE_LIST:
 			return equalType(type1->refType,type2->refType);
@@ -680,6 +694,9 @@ void printType (Type type)
             printf("array of ");
             printType(type->refType);
             break;
+		case TYPE_POINTER:
+			printf("pointer to ");
+			printType(type->refType);
 		case TYPE_LIST:
 			printf("list of ");
 			printType(type->refType);
@@ -718,6 +735,8 @@ const char * typeToStr (Type type)
 			sprintf(buf,"array of %s",typeToStr(type->refType));
 			return strdup(buf);
             break;
+		case TYPE_POINTER:
+			sprintf(buf,"pointer to %s",typeToStr(type->refType));
 		case TYPE_LIST:
 			sprintf(buf,"list of %s",typeToStr(type->refType));
 			return strdup(buf);

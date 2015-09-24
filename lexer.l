@@ -11,6 +11,8 @@ int  linecount=1;
 char lastWhitespace=' ';
 int  nesting;
 
+void omitQuotes(char * string);
+
 %}
 
 L [A-Za-z]		
@@ -55,7 +57,7 @@ ESCAPE \\(n|t|r|0|\\|\'|\"|x{HEX}{HEX})
 
 {D}+				{ yylval.val=atoi(yytext); return T_int_const; }
 
-\"([^\n\"\'\\]|{ESCAPE})*\" { yylval.name=strdup(yytext); return T_string; }
+\"([^\n\"\'\\]|{ESCAPE})*\" { char buf[strlen(yytext)]; strcpy(buf,yytext); omitQuotes(buf); yylval.name=strdup(buf); return T_string; }
 
 \'([^\"\'\\]|{ESCAPE})\'	{ yylval.val=yytext[1];	return T_char_const; }
 
@@ -85,6 +87,16 @@ ESCAPE \\(n|t|r|0|\\|\'|\"|x{HEX}{HEX})
 .					{ yyerror("char not recognised"); } 
 
 %%
+
+void omitQuotes(char * string)
+{
+	int i=0;
+	while(string[i+1]!='"'){
+		string[i]=string[i+1];
+		i++;
+	}
+	string[i]='\0';
+}
 
 /*void ERROR(const char msg[]){
 	fprintf(stderr,"ERROR: %s\n",msg);

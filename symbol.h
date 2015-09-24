@@ -71,6 +71,7 @@ struct Type_tag {
        TYPE_CHAR,                        /* Χαρακτήρες                */
        TYPE_ARRAY,                       /* Πίνακες γνωστού μεγέθους  */
        TYPE_IARRAY,                      /* Πίνακες άγνωστου μεγέθους */
+	   TYPE_POINTER,					 /* Δείκτες					  */
 	   TYPE_LIST,
 	   TYPE_ANY
     } kind;
@@ -219,6 +220,7 @@ SymbolEntry * lookupEntry        (const char * name, LookupType type,
 
 Type          typeArray          (RepInteger size, Type refType);
 Type          typeIArray         (Type refType);
+Type		  typePointer		 (Type refType);
 Type		  typeList			 (Type refType);
 void          destroyType        (Type type);
 unsigned int  sizeOfType         (Type type);

@@ -27,6 +27,9 @@
 typedef enum{
 	OPERAND_SYMBOL,
 	OPERAND_QLABEL,
+	OPERAND_UNIT,
+	OPERAND_DEREFERENCE,
+	OPERAND_ADDRESS,
 	OPERAND_PASSMODE,
 	OPERAND_NULL,
 	OPERAND_STAR,
@@ -71,15 +74,14 @@ typedef struct{
    ------------------ Ορισμός καθολικών μεταβλητών ---------------------
    --------------------------------------------------------------------- */
 
-extern Quad		q[];
+extern Quad			q[];
+extern int			qprintStart;
 
 extern const Operand oR  ; 
 extern const Operand oV  ;
 extern const Operand oRET;
 extern const Operand o_  ;
 extern const Operand oSTAR;
-
-
 
 /* ---------------------------------------------------------------------
    --------------- Πρωτότυπα των βοηθητικών συναρτήσεων ----------------
@@ -89,10 +91,13 @@ void	genquad		(const char * op,Operand x,Operand y,Operand z);
 List*	emptylist	(void);
 List*	makelist	(int qnum);
 List*	merge		(List * l1,List * l2);
-void	backpatch	(List * l,Operand label);
+void	backpatch	(List * l,int qnum);
 
-Operand	oS			(SymbolEntry *);	/* creates symbol operand */
-Operand	oL			(int quadLabel);	/* creates quad label operand */
+Operand	oS			(SymbolEntry *);		/* creates symbol operand */
+Operand	oL			(int quadLabel);		/* creates quad label operand */
+Operand oU			(const char *unitName); /* creates unit operand */
+Operand oD			(SymbolEntry *);		/* creates dereference [x] operand */ 	
+Operand oA			(SymbolEntry *);		/* creates address {x} operand */ 		
 
 void	printList	(List * l);
 void	printQuads	(void);

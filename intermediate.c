@@ -32,6 +32,11 @@
 
 Quad q[QUAD_ARRAY_SIZE];
 
+int  qprintStart = 1;
+
+FILE * iout;
+FILE * fout;
+
 static struct Operand_tag operandConst [] = {
 	    { OPERAND_PASSMODE,	"V",	NULL },
 		{ OPERAND_PASSMODE,	"R",	NULL },
@@ -71,6 +76,35 @@ Operand oL(int quadLabel)
 	return o;
 }
 
+Operand oU(const char * unitName)
+{
+	Operand o = (Operand ) new(sizeof(struct Operand_tag));
+	o->type = OPERAND_UNIT;
+	o->name = unitName;
+	return o;
+}
+
+Operand oD(SymbolEntry * s)
+{
+	Operand o = (Operand ) new(sizeof(struct Operand_tag));
+	o->type = OPERAND_DEREFERENCE;
+	int buf_size = 3+strlen(s->id);
+	char buf[buf_size];
+	snprintf(buf,buf_size,"[%s]",s->id);
+	o->name = strdup(buf);
+	o->u.symbol = s;
+}
+
+Operand oA(SymbolEntry * s)
+{
+	Operand o = (Operand ) new(sizeof(struct Operand_tag));
+	o->type = OPERAND_ADDRESS;
+	int buf_size = 3+strlen(s->id);
+	char buf[buf_size];
+	snprintf(buf,buf_size,"{%s}",s->id);
+	o->name = strdup(buf);
+	o->u.symbol = s;
+}
 
 void genquad(const char * op,Operand x,Operand y,Operand z)
 {
@@ -85,27 +119,15 @@ void genquad(const char * op,Operand x,Operand y,Operand z)
 void printQuads()
 {
 	int i;
-	fprintf(stdout,"Quads: \n");
-	for(i=0;i<quadNext;i++)
-		fprintf(stdout,"%d:\t %s\t %s\t %s\t %s\t\n",i,q[i].op,q[i].x->name,q[i].y->name,q[i].z->name);
+	for(i=qprintStart;i<quadNext;i++)
+		fprintf(iout,"%d: %s, %s, %s, %s\n",i,q[i].op,q[i].x->name,q[i].y->name,q[i].z->name);
+	qprintStart=quadNext;
 }
 
-/*
-void printOperand(Operand *o){
-	switch(o->type){
-		case OPERAND_SYMBOL:	printf("%s",(o->u.symbol)->id);
-		case OPERAND_QLABEL:	printf("%d",o->u.quadLabel);
-		case OPERAND_NULL:		printf("-");
-		case OPERAND_STAR:		printf("*");
-		case OPERAND_PASSMODE:
-			switch(o->u.passMode){
-				case PASS_BY_VALUE:		printf("V");
-				case PASS_BY_REFERENCE:	printf("R");
-				case PASS_RESULT:		printf("RET");
-			}
-	}
-}*/
 
+/* -------------------------------------------------------------
+   -------------------- Helper List Functions ------------------
+   ------------------------------------------------------------- */
 
 List* emptylist()
 {
@@ -124,18 +146,19 @@ List* makelist(int qnum)
 	return l;
 }
 
+//crosses 2nd list, so put large list first
 List* merge(List *l1, List *l2)
 {
-	if(l1->head==NULL) return l2;
-	Node * p = l1->head;
+	if(l2->head==NULL) return l1;
+	Node * p = l2->head;
 	while(p->next!=NULL) p=p->next;
-	p->next=l2->head;
-	return l1;
+	p->next=l1->head;
+	return l2;
 }
 
-void backpatch(List *l,Operand dest)
+void backpatch(List *l,int qnum)
 {
-	if(dest->type!=OPERAND_QLABEL) internal("only give labels for backpatching");
+	Operand dest = oL(qnum);
 	Node * p = l->head;
 	Node * t;
 	while(p!=NULL){
@@ -164,20 +187,5 @@ void printList(List *l){
 
 void  test()
 {
-
-genquad("+",o_,o_,oSTAR);
-genquad("*",o_,oR,oSTAR);
-genquad("array",o_,oRET,oSTAR);
-
-printQuads();
-
-List *l2 = makelist(0);
-printList(l2);
-List *l3 = merge(l2,makelist(2));
-printList(l3);
-backpatch(l3,oL(4));
-printQuads();
-printList(l3);
-
 
 }
