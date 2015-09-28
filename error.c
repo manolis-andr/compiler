@@ -50,7 +50,7 @@ void internal (const char * fmt, ...)
    vfprintf(stderr, fmt, ap);
    fprintf(stderr, "\n");
    va_end(ap);
-   exit(1);
+   exit(INTERNAL_ERRNUM);
 }
 
 void fatal (const char * fmt, ...)
@@ -66,7 +66,7 @@ void fatal (const char * fmt, ...)
    vfprintf(stderr, fmt, ap);
    fprintf(stderr, "\n");
    va_end(ap);
-   exit(1);
+   exit(FATAL_ERRNUM);
 }
 
 void error (const char * fmt, ...)
@@ -120,7 +120,7 @@ void sserror(const char * fmt, ...)
    vfprintf(stderr, fmt, ap);
    fprintf(stderr, "\n");
    va_end(ap);
-   exit(1);
+   exit(SEMANTIC_ERRNUM);
 }
 
 
@@ -140,5 +140,5 @@ void ssmerror(const char * fmt, ...)
    vfprintf(stderr, fmt, ap);
    fprintf(stderr, "\n");
    va_end(ap);
-   exit(1);
+   exit(SEMANTIC_ERRNUM);
 }

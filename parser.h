@@ -93,10 +93,20 @@ union YYSTYPE
 	const char * name;
 	int val;
 	struct expr_tag {
-		SymbolEntry *	place;
 		Type			type;
+		SymbolEntry *	place;
 		bool			lval;
+		SymbolEntry *	address;
 	} expr;
+	struct lval_tag {
+		Type			type;
+		SymbolEntry *	place;
+		SymbolEntry *	address;
+	}lval;
+	struct rval_tag {
+		Type			type;
+		SymbolEntry *	place;
+	}rval;
 	struct cond_tag {
 		List *			TRUE;
 		List *			FALSE;
@@ -105,7 +115,7 @@ union YYSTYPE
 		List *			NEXT;
 	}stmt;
 
-#line 109 "parser.h" /* yacc.c:1909  */
+#line 119 "parser.h" /* yacc.c:1909  */
 };
 # define YYSTYPE_IS_TRIVIAL 1
 # define YYSTYPE_IS_DECLARED 1

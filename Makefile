@@ -33,4 +33,4 @@ clean:
 	$(RM) lexer.c parser.c *.o *~
 
 distclean:
-	$(RM) lexer.c parser.c *.o *~ parser
+	$(RM) lexer.c parser.c parser.output *.o *.asm *.imm *~ compiler 

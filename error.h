@@ -22,6 +22,11 @@
 #ifndef __ERROR_H__
 #define __ERROR_H__
 
+/* error numbers returning to OS after exit call, on success returns 0 */
+#define SYNTAX_ERRNUM	1
+#define SEMANTIC_ERRNUM	2
+#define INTERNAL_ERRNUM	(-1)
+#define FATAL_ERRNUM	(-2)
 
 /* ---------------------------------------------------------------------
    --------- Πρωτότυπα των συναρτήσεων του χειριστή σφαλμάτων ----------
