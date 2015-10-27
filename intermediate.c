@@ -34,9 +34,6 @@ Quad q[QUAD_ARRAY_SIZE];
 
 int  qprintStart = 1;
 
-FILE * iout;
-FILE * fout;
-
 static struct Operand_tag operandConst [] = {
 	    { OPERAND_PASSMODE,	"V",	NULL },
 		{ OPERAND_PASSMODE,	"R",	NULL },
@@ -124,6 +121,50 @@ void printQuads()
 	qprintStart=quadNext;
 }
 
+
+ListPair createCondition(Operand place)
+{	
+	#ifdef DEBUG
+	printf("got in createCondition!\n");
+	#endif
+	ListPair l;
+	l.TRUE = makelist(quadNext);
+	genquad("ifb",place,o_,oSTAR);
+	l.FALSE = makelist(quadNext);
+	genquad("jump",o_,o_,oSTAR);
+	#ifdef DEBUG
+	printf("got out of createCondition!\n");
+	#endif
+	return l;
+}
+
+Operand evaluateCondition(List * TRUE, List * FALSE)
+{
+	#ifdef DEBUG
+	printf("got in evaluateCondition!\n");
+	#endif
+	SymbolEntry * w = newTemporary(typeBoolean);
+	backpatch(TRUE,quadNext);
+	genquad(":=",oS(newConstant("true",typeBoolean,true)),o_,oS(w));
+	genquad("jump",o_,o_,oL(quadNext+2));
+	backpatch(FALSE,quadNext);
+	genquad(":=",oS(newConstant("false",typeBoolean,false)),o_,oS(w));
+	#ifdef DEBUG
+	printf("got out of evaluateCondition!\n");
+	#endif
+	return oS(w);
+}
+
+/* Optimizations 
+ 	1. constant expr evaluation
+	2. algebra transformations
+	3. boolean algebra transformations
+	4. inverse propagation
+	5. ?
+*/
+void optimize(){
+
+}
 
 /* -------------------------------------------------------------
    -------------------- Helper List Functions ------------------

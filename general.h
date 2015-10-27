@@ -18,6 +18,7 @@
  *  Εργαστήριο Τεχνολογίας Λογισμικού
  */
 
+#include <stdio.h>
 
 #ifndef __GENERAL_H__
 #define __GENERAL_H__
@@ -37,6 +38,9 @@ void   delete (void *);
 
 extern int linecount;
 extern const char * filename;
+extern FILE * iout;
+extern FILE * fout;
+
 
 
 #endif

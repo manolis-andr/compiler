@@ -12,6 +12,9 @@ char lastWhitespace=' ';
 int  nesting;
 
 void omitQuotes(char * string);
+int	 fixEscapeChar();
+int  fixHex();
+int  charToInt(char );
 
 %}
 
@@ -57,10 +60,12 @@ ESCAPE \\(n|t|r|0|\\|\'|\"|x{HEX}{HEX})
 
 {D}+				{ yylval.val=atoi(yytext); return T_int_const; }
 
-\"([^\n\"\'\\]|{ESCAPE})*\" { char buf[strlen(yytext)]; strcpy(buf,yytext); omitQuotes(buf); yylval.name=strdup(buf); return T_string; }
+\"([^\n\"\'\\]|{ESCAPE})*\" { char buf[strlen(yytext)]; strcpy(buf,yytext); /*omitQuotes(buf);*/ yylval.name=strdup(buf); return T_string; }
 
-\'([^\"\'\\]|{ESCAPE})\'	{ yylval.val=yytext[1];	return T_char_const; }
-
+\'([^\"\'\\]|{ESCAPE})\'	{ if(yytext[1]=='\\')	yylval.val=fixEscapeChar();
+							  else					yylval.val=yytext[1];	
+							  return T_char_const; 
+							}
  
 [+|\-|*|/|#|=|<|>]	{ return yytext[0]; }
 "<="				{ return T_le;	}
@@ -97,6 +102,46 @@ void omitQuotes(char * string)
 	}
 	string[i]='\0';
 }
+
+int fixEscapeChar()
+{
+	//indicator is the char after the backshlash
+	switch(yytext[2]){
+		case 'n': return '\n';
+		case 't': return '\t';
+		case 'r': return '\r';
+		case '0': return '\0';
+		case '\\': return '\\';
+		case '\'': return '\'';
+		case '\"': return '\'';
+		case 'x': return fixHex();
+		default : internal("lexer: escape char, unmatched case");
+	}
+}
+
+int fixHex()
+{
+	int d1,d2,hex;
+	d1=charToInt(yytext[3]);
+	if(yytext[4]=='\'') {d2=d1; d1=0;}
+	else				d2=charToInt(yytext[4]);
+	hex = d1*16 + d2;
+	return hex;
+}
+
+int charToInt(char c)
+{
+	if(c>='0' && c<='9')
+		return c-'0';
+	else if(c>='a' && c<='f')
+		return c-'a'+10;
+	else if(c>='A' && c<='F')
+		return c-'A'+10;
+	else
+		error("lexer: %s not a proper char expression",yytext);
+}
+	
+
 
 /*void ERROR(const char msg[]){
 	fprintf(stderr,"ERROR: %s\n",msg);

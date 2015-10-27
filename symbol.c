@@ -212,7 +212,7 @@ static SymbolEntry * newEntry (const char * name)
 {
     SymbolEntry * e;
     
-    /* Έλεγχος αν υπάρχει ήδη */
+    /* Έλεγχος αν υπάρχει ήδη στο τρέχον scope */
     
     for (e = currentScope->entries; e != NULL; e = e->nextInScope)
         if (strcmp(name, e->id) == 0) {

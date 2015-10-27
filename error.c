@@ -33,6 +33,7 @@
 extern char lastWhitespace;
 extern char * yytext;
 
+
 /* ---------------------------------------------------------------------
    --------- Υλοποίηση των συναρτήσεων του χειριστή σφαλμάτων ----------
    --------------------------------------------------------------------- */
@@ -50,6 +51,7 @@ void internal (const char * fmt, ...)
    vfprintf(stderr, fmt, ap);
    fprintf(stderr, "\n");
    va_end(ap);
+   //FIXME: here fremove("filename") to delete .imm and .asm files if a syntax error is spotted
    exit(INTERNAL_ERRNUM);
 }
 

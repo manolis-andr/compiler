@@ -69,6 +69,11 @@ typedef struct{
 	Node * head;
 }List;
 
+typedef struct ListPair_tag{
+	List * TRUE;
+	List * FALSE;
+} ListPair;
+
 
 /* ---------------------------------------------------------------------
    ------------------ Ορισμός καθολικών μεταβλητών ---------------------
@@ -101,6 +106,9 @@ Operand oA			(SymbolEntry *);		/* creates address {x} operand */
 
 void	printList	(List * l);
 void	printQuads	(void);
+
+ListPair	createCondition		(Operand place);
+Operand		evaluateCondition	(List * TRUE, List * FALSE);
 
 void	test();
 
