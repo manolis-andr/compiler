@@ -7,6 +7,7 @@
  *  Project     : PCL Compiler
  *  Version     : 1.0 alpha
  *  Written by  : Nikolaos S. Papaspyrou (nickie@softlab.ntua.gr)
+ *  Modified by : Manolis Androulidakis
  *  Date        : May 14, 2003
  *  Description : Generic symbol table in C
  *
@@ -629,6 +630,7 @@ unsigned int sizeOfType (Type type)
         case TYPE_INTEGER:
         case TYPE_IARRAY:
 		case TYPE_POINTER:
+		case TYPE_LIST:
 			return 2;
 		case TYPE_ANY:
         case TYPE_BOOLEAN:

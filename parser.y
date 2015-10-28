@@ -29,38 +29,101 @@ struct Memory{
 } mem;
 
 
+/* ********************************************	*
+ *					c_ MODULE					*
+ * helper structs and functions for call symbol	*		
+ * ********************************************	*/
+
+
+//element of a queue with quads
+typedef struct c_quad{
+	Operand			passMode;
+	Operand			place;
+	struct c_quad * next;
+} c_quad;
+
+//element of a stack with functions
 typedef struct c_pair{
 	SymbolEntry *	func;
 	SymbolEntry *	arg;
+	c_quad *		quads;
 	struct c_pair *	next;
 } c_pair;
 
 c_pair * c_stack = NULL;
 
-c_push(SymbolEntry * func, SymbolEntry * arg)
+SymbolEntry * c_getFunc() {return c_stack->func;}
+SymbolEntry * c_getArg()  {return c_stack->arg;}
+c_quad *	  c_getQuads(){return c_stack->quads;}
+void c_setArg(SymbolEntry * arg) {c_stack->arg = arg;}
+void c_setQuads(c_quad * q)		 {c_stack->quads=q;}
+
+//push a new function into the stack
+void c_push(SymbolEntry * func, SymbolEntry * arg)
 {
 	c_pair * n = (c_pair *) new(sizeof(c_pair));
 	n->func = func;
 	n->arg	= arg;
+	n->quads= NULL;
 	n->next = c_stack;
 	c_stack = n;
 }
 
-c_pop(){
+//pop a function from the stack and delete its struct
+void c_pop()
+{
 	if(c_stack==NULL) internal("attempt to pop from empty stack");
 	c_pair * temp = c_stack;
 	c_stack = c_stack->next;
 	delete(temp);
 }
 
+#ifdef DEBUG
+void c_printQuads(){
+	c_quad * quads = c_getQuads();
+	printf("quads of %s: ",c_getFunc()->id);
+	if(quads==NULL) {printf("<empty>\n"); return;}
+	c_quad * p = quads;
+	while(p!=NULL) {
+		printf("(%s,%s), ",p->passMode->name,p->place->name);
+		p=p->next;
+	}
+	printf("\n");
+}
+#endif
 
-SymbolEntry * c_getFunc() {return c_stack->func;}
-SymbolEntry * c_getArg()  {return c_stack->arg;}
-void c_setArg(SymbolEntry * arg) {c_stack->arg = arg;}
+//add a par quad at the end of the quads queue for the function at the top of the c_stack
+void c_addQuad(Operand passMode, Operand place)
+{
+	c_quad * n = (c_quad *) new(sizeof(c_quad));
+	n->passMode = passMode;
+	n->place	= place;
+	n->next		= NULL;
+	c_quad * queue = c_getQuads();
+	if(queue==NULL)
+		c_setQuads(n);
+	else {
+		c_quad * p = queue;
+		while(p->next!=NULL) p=p->next;
+		p->next=n;
+	}
+}
 
-
+//generate quads and deletes queue elements
+void c_generateQuads(c_quad * quads)
+{
+	if(quads==NULL) return;
+	c_quad * p = quads;
+	while(p!=NULL) {
+		genquad("par",p->passMode,p->place,o_);
+		c_quad * tmp = p;
+		p=p->next;
+		delete(tmp);
+	}
+}
 
 /* *********************** */
+
 
 #ifndef LF_PARAM_NUM_MAX
 	#define LF_PARAM_NUM_MAX 2
@@ -434,6 +497,7 @@ call		: T_id '('			{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 								 c_push(s,s->u.eFunction.firstArgument);
 								}	
 				expr_list ')'	{SymbolEntry *s = c_getFunc(); 
+								 c_generateQuads(c_getQuads());
 								 if(!equalType(s->u.eFunction.resultType,typeVoid)){
 									 SymbolEntry * w = newTemporary(s->u.eFunction.resultType);
 									 genquad("par",oRET,oS(w),o_);
@@ -468,10 +532,13 @@ expr_list	: expr				{SymbolEntry * arg = c_getArg();
 								 if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $1.lval==false)			
 									ssmerror("parameter pass is by reference but argument is not an l-value");
 								 else if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $1.lval==true)
-									genquad("par",oR,$1.place,o_);
+									c_addQuad(oR,$1.place); 
 							 	 else if (arg->u.eParameter.mode==PASS_BY_VALUE)
-									genquad("par",oV,$1.place,o_); 
+									c_addQuad(oV,$1.place);
 								 else internal("unmatched parameter case");
+								 #ifdef DEBUG
+								 c_printQuads();
+								 #endif
 								 c_setArg(arg->u.eParameter.next);
 								}
 				expr_full
@@ -487,10 +554,13 @@ expr_full	:',' expr			{SymbolEntry * arg = c_getArg();
 								 if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $2.lval==false)			
 									ssmerror("parameter pass is by reference but argument is not an l-value");
 								 else if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $2.lval==true)
-									genquad("par",oR,$2.place,o_);
+									c_addQuad(oR,$2.place);
 							 	 else if (arg->u.eParameter.mode==PASS_BY_VALUE) 
-									genquad("par",oV,$2.place,o_);
+									c_addQuad(oV,$2.place);
 								 else internal("unmatched parameter case");
+								 #ifdef DEBUG
+								 c_printQuads();
+								 #endif
 								 c_setArg(arg->u.eParameter.next);
 								}
 				expr_full		
@@ -714,26 +784,75 @@ rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeI
 			| "new" type '[' expr ']'	{if(!equalType($4.type,typeInteger))  
 											sserror("array size must be integer whereas expression in brackets is %s",typeToStr($4.type));
 										 $$.type=typeIArray($2); 
-										 $$.place=oS(newTemporary($$.type));
+										 Operand w = oS(newTemporary(typeInteger));						//size of array in bytes
+										 Operand z = oS(newTemporary($$.type));							//place for result of newarrv
+										 // if type is array of any or list of any then use newarrp
+										 if(equalType($2,typeIArray(typeAny)) || equalType($2,typeList(typeAny))){
+											Operand s = oS(newConstant(NULL,typeInteger,sizeOfType($2)/2));	//size of referenced type in words FIXME
+											genquad("*",$4.place,s,w);
+											genquad("par",oV,w,o_);
+											genquad("par",oRET,z,o_);
+											genquad("call",o_,o_,oU("newarrp"));
+										 } else {
+											Operand s = oS(newConstant(NULL,typeInteger,sizeOfType($2)));	//size of referenced type in bytes
+											genquad("*",$4.place,s,w);
+											genquad("par",oV,w,o_);
+											genquad("par",oRET,z,o_);
+											genquad("call",o_,o_,oU("newarrv"));
+										 }
+										 $$.place=z;
 										 $$.cond=false;
 										}
 
 
 			| expr '#' expr				{if(equalType($3.type,typeList(typeAny)) && equalType($1.type,$3.type->refType)) 
-											$$.type=$3.type; 
-										 else sserror("type mismatch in list construction (head: %s tail: %s)",typeToStr($1.type),typeToStr($1.type));}
-										/* FIXME: ecaluateCondition for expr here */
+											$$.type=typeList($1.type); 
+										 else sserror("type mismatch in list construction (head: %s tail: %s)",typeToStr($1.type),typeToStr($1.type));
+										 if($1.cond) $1.place = evaluateCondition($1.TRUE,$1.FALSE);
+										 Operand z = oS(newTemporary($$.type));
+										 if(equalType($1.type,typeIArray(typeAny)) || equalType($1.type,typeList(typeAny))){
+											 genquad("par",oV,$1.place,o_);
+											 genquad("par",oV,$3.place,o_);
+											 genquad("par",oRET,z,o_);
+											 genquad("call",o_,o_,oU("consp"));
+										 } else {
+											 genquad("par",oV,$1.place,o_);
+											 genquad("par",oV,$3.place,o_);
+											 genquad("par",oRET,z,o_);
+											 genquad("call",o_,o_,oU("consv"));
+										 }
+										 $$.place=z;
+										 $$.cond=false;
+										}
 
-			| "nil"						{$$.type=typeList(typeAny);}
+			/*FIXME: nil, nil? */
 
-			| "nil?" '(' expr ')'		{if(equalType($3.type,typeList(typeAny))) {$$.type=typeBoolean; }
-										 else sserror("expression in brackets must be some list type");}
+			| "nil"						{$$.type=typeList(typeAny);		$$.place=oS(newConstant("nil",$$.type));}
 
-			| "head" '(' expr ')'		{if(equalType($3.type,typeList(typeAny))) {$$.type=$3.type->refType; }
-										 else sserror("expression in brackets must be some list type but is %s",typeToStr($3.type));}
+			| "nil?" '(' expr ')'		{if(!equalType($3.type,typeList(typeAny))) sserror("expression in brackets must be some list type");
+										 $$.type=typeBoolean;
+										 }
 
-			| "tail" '(' expr ')'		{if(equalType($3.type,typeList(typeAny))) {$$.type=$3.type;}			 
-										 else sserror("expression in brackets must be some list type");}
+			| "head" '(' expr ')'		{if(!equalType($3.type,typeList(typeAny))) 
+											sserror("expression in brackets must be some list type but is %s",typeToStr($3.type));
+										 $$.type=$3.type->refType;
+										 Operand z = oS(newTemporary($$.type));
+										 genquad("par",oV,$3.place,o_);
+										 genquad("par",oRET,z,o_);
+										 genquad("call",o_,o_,oU("head"));
+										 $$.place=z;
+										 $$.cond=false;
+										}
+
+			| "tail" '(' expr ')'		{if(!equalType($3.type,typeList(typeAny))) sserror("expression in brackets must be some list type");
+										 $$.type=$3.type;
+										 Operand z = oS(newTemporary($$.type));
+										 genquad("par",oV,$3.place,o_);
+										 genquad("par",oRET,z,o_);
+										 genquad("call",o_,o_,oU("tail"));
+										 $$.place=z;
+										 $$.cond=false;
+										}
 			
 
 

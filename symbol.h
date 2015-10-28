@@ -7,6 +7,7 @@
  *  Project       : PCL Compiler
  *  Version       : 1.0 alpha
  *  Written by    : Nikolaos S. Papaspyrou (nickie@softlab.ntua.gr)
+ *  Modified by	  : Manolis Andtoulidakis
  *  Date          : May 14, 2003
  *  Description   : Generic symbol table in C
  *
