@@ -7,6 +7,7 @@
  *  Project     : PCL Compiler
  *  Version     : 1.0 alpha
  *  Written by  : Nikolaos S. Papaspyrou (nickie@softlab.ntua.gr)
+ *  Modified by : Manolis Androulidakis
  *  Date        : May 14, 2003
  *  Description : Generic symbol table in C
  *
@@ -212,7 +213,7 @@ static SymbolEntry * newEntry (const char * name)
 {
     SymbolEntry * e;
     
-    /* Έλεγχος αν υπάρχει ήδη */
+    /* Έλεγχος αν υπάρχει ήδη στο τρέχον scope */
     
     for (e = currentScope->entries; e != NULL; e = e->nextInScope)
         if (strcmp(name, e->id) == 0) {
@@ -258,9 +259,6 @@ SymbolEntry * newConstant (const char * name, Type type, ...)
         RepString  vString;
     } value;
     
-	if(name!=NULL){
-	}
-
     va_start(ap, type);
     switch (type->kind) {
         case TYPE_INTEGER:
@@ -272,6 +270,7 @@ SymbolEntry * newConstant (const char * name, Type type, ...)
         case TYPE_CHAR:
             value.vChar = va_arg(ap, int);        /* RepChar is promoted */
             break;
+		case TYPE_IARRAY:
         case TYPE_ARRAY:
             if (equalType(type->refType, typeChar)) {
                 RepString str = va_arg(ap, RepString);
@@ -312,12 +311,16 @@ SymbolEntry * newConstant (const char * name, Type type, ...)
 		e = lookupEntry(buffer,LOOKUP_ALL_SCOPES,false);
 		if(e==NULL)	
 	        e = newEntry(buffer);
+		else
+			return e;
     }
     else{
 		/* Our addition: Construct only one instance for each different value */
 		e = lookupEntry(name,LOOKUP_ALL_SCOPES,false);
 		if(e==NULL)	
 			e = newEntry(name);
+		else 
+			return e;
     }
 
     if (e != NULL) {
@@ -447,6 +450,8 @@ void forwardFunction (SymbolEntry * f)
 
 void endFunctionHeader (SymbolEntry * f, Type type)
 {
+	static int maxSerialNum = - LF_FUNC_NUM;
+
     if (f->entryType != ENTRY_FUNCTION)
         internal("Cannot end parameters in a non-function");
     switch (f->u.eFunction.pardef) {
@@ -454,7 +459,8 @@ void endFunctionHeader (SymbolEntry * f, Type type)
             internal("Cannot end parameters in an already defined function");
             break;
         case PARDEF_DEFINE:
-            fixOffset(f->u.eFunction.firstArgument);
+			f->u.eFunction.serialNum = maxSerialNum++;
+            f->u.eFunction.posOffset = fixOffset(f->u.eFunction.firstArgument);
             f->u.eFunction.resultType = type;
             type->refCount++;
             break;
@@ -584,6 +590,19 @@ Type typeIArray (Type refType)
     return n;
 }
 
+Type typePointer(Type refType)
+{
+	Type n = (Type) new(sizeof(struct Type_tag));
+
+	n->kind		= TYPE_POINTER;
+	n->refType	= refType;
+	n->refCount = 1;
+
+	refType->refCount++;
+
+	return n;
+}
+
 Type typeList (Type refType)
 {
 	Type n = (Type) new(sizeof(struct Type_tag));
@@ -615,7 +634,9 @@ unsigned int sizeOfType (Type type)
             break;
         case TYPE_INTEGER:
         case TYPE_IARRAY:
+		case TYPE_POINTER:
 		case TYPE_LIST:
+			return 2;
 		case TYPE_ANY:
         case TYPE_BOOLEAN:
         case TYPE_CHAR:
@@ -643,6 +664,8 @@ bool equalType (Type type1, Type type2)
 			else
 				return equalType(type1->refType,type2->refType);
         case TYPE_IARRAY:
+			return equalType(type1->refType,type2->refType);
+		case TYPE_POINTER:
 			return equalType(type1->refType,type2->refType);
 		case TYPE_LIST:
 			return equalType(type1->refType,type2->refType);
@@ -678,6 +701,9 @@ void printType (Type type)
             printf("array of ");
             printType(type->refType);
             break;
+		case TYPE_POINTER:
+			printf("pointer to ");
+			printType(type->refType);
 		case TYPE_LIST:
 			printf("list of ");
 			printType(type->refType);
@@ -716,6 +742,8 @@ const char * typeToStr (Type type)
 			sprintf(buf,"array of %s",typeToStr(type->refType));
 			return strdup(buf);
             break;
+		case TYPE_POINTER:
+			sprintf(buf,"pointer to %s",typeToStr(type->refType));
 		case TYPE_LIST:
 			sprintf(buf,"list of %s",typeToStr(type->refType));
 			return strdup(buf);

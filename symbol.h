@@ -7,6 +7,7 @@
  *  Project       : PCL Compiler
  *  Version       : 1.0 alpha
  *  Written by    : Nikolaos S. Papaspyrou (nickie@softlab.ntua.gr)
+ *  Modified by	  : Manolis Andtoulidakis
  *  Date          : May 14, 2003
  *  Description   : Generic symbol table in C
  *
@@ -71,6 +72,7 @@ struct Type_tag {
        TYPE_CHAR,                        /* Χαρακτήρες                */
        TYPE_ARRAY,                       /* Πίνακες γνωστού μεγέθους  */
        TYPE_IARRAY,                      /* Πίνακες άγνωστου μεγέθους */
+	   TYPE_POINTER,					 /* Δείκτες					  */
 	   TYPE_LIST,
 	   TYPE_ANY
     } kind;
@@ -139,6 +141,8 @@ struct SymbolEntry_tag {
              PARDEF_CHECK                        /* Εν μέσω ελέγχου    */
          } pardef;
          int           firstQuad;             /* Αρχική τετράδα        */
+		 int			posOffset;
+		 int			serialNum;			//used for assembly numbering
       } eFunction;
 
       struct {                                /****** Παράμετρος *******/
@@ -219,6 +223,7 @@ SymbolEntry * lookupEntry        (const char * name, LookupType type,
 
 Type          typeArray          (RepInteger size, Type refType);
 Type          typeIArray         (Type refType);
+Type		  typePointer		 (Type refType);
 Type		  typeList			 (Type refType);
 void          destroyType        (Type type);
 unsigned int  sizeOfType         (Type type);

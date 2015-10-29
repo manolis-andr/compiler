@@ -5,11 +5,22 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <unistd.h>
+#include <signal.h>
 #include <fcntl.h>
 
 #include "symbol.h"
 #include "error.h"
 #include "general.h"
+#include "intermediate.h"
+
+#ifndef INTERMEDIATE
+	#include "final.h"
+#else
+	void printFinal() { static bool flag = true;	if(flag) {fprintf(stderr,"Intermediate code only. Make-option INTERMEDIATE=1\n"); flag=!flag;} }
+	void skeletonBegin(const char * c) {;}
+	void skeletonEnd() {;}
+#endif
 
 /* Struct for remembering previous symbol table options, when we dig deeper into the symbols */
 struct Memory{
@@ -18,20 +29,186 @@ struct Memory{
 	PassMode		ref;
 	int				forward;
 	SymbolEntry *	arg;
+	Operand			place;
+	int				loopLabel;
+	int				condLabel;
+	List *			lnext;
+	List *			lastFalse;
+	List *			endif;
 } mem;
 
-/* checks if excessive brackets have been placed and returns type of array dereferene */
-Type findArrayType(Type arrayType,int brackets)
+
+bool firstBlock = true;
+
+/* ********************************************	*
+ *					c_ MODULE					*
+ * helper structs and functions for call symbol	*		
+ * ********************************************	*/
+
+
+//element of a queue with quads
+typedef struct c_quad{
+	Operand			passMode;
+	Operand			place;
+	struct c_quad * next;
+} c_quad;
+
+//element of a stack with functions
+typedef struct c_pair{
+	SymbolEntry *	func;
+	SymbolEntry *	arg;
+	c_quad *		quads;
+	struct c_pair *	next;
+} c_pair;
+
+c_pair * c_stack = NULL;
+
+SymbolEntry * c_getFunc() {return c_stack->func;}
+SymbolEntry * c_getArg()  {return c_stack->arg;}
+c_quad *	  c_getQuads(){return c_stack->quads;}
+void c_setArg(SymbolEntry * arg) {c_stack->arg = arg;}
+void c_setQuads(c_quad * q)		 {c_stack->quads=q;}
+
+//push a new function into the stack
+void c_push(SymbolEntry * func, SymbolEntry * arg)
 {
-	Type t = arrayType;
-	while(t->refType!=NULL && brackets>0){
-		t=t->refType;
-		brackets--;
+	c_pair * n = (c_pair *) new(sizeof(c_pair));
+	n->func = func;
+	n->arg	= arg;
+	n->quads= NULL;
+	n->next = c_stack;
+	c_stack = n;
+}
+
+//pop a function from the stack and delete its struct
+void c_pop()
+{
+	if(c_stack==NULL) internal("attempt to pop from empty stack");
+	c_pair * temp = c_stack;
+	c_stack = c_stack->next;
+	delete(temp);
+}
+
+#ifdef DEBUG
+void c_printQuads(){
+	c_quad * quads = c_getQuads();
+	printf("quads of %s: ",c_getFunc()->id);
+	if(quads==NULL) {printf("<empty>\n"); return;}
+	c_quad * p = quads;
+	while(p!=NULL) {
+		printf("(%s,%s), ",p->passMode->name,p->place->name);
+		p=p->next;
 	}
-	if(t->refType==NULL && brackets>0) 
-		sserror("excessive brackets");
-	else 
-		return t;
+	printf("\n");
+}
+#endif
+
+//add a par quad at the end of the quads queue for the function at the top of the c_stack
+void c_addQuad(Operand passMode, Operand place)
+{
+	c_quad * n = (c_quad *) new(sizeof(c_quad));
+	n->passMode = passMode;
+	n->place	= place;
+	n->next		= NULL;
+	c_quad * queue = c_getQuads();
+	if(queue==NULL)
+		c_setQuads(n);
+	else {
+		c_quad * p = queue;
+		while(p->next!=NULL) p=p->next;
+		p->next=n;
+	}
+}
+
+//generate quads and deletes queue elements
+void c_generateQuads(c_quad * quads)
+{
+	if(quads==NULL) return;
+	c_quad * p = quads;
+	while(p!=NULL) {
+		genquad(O_PAR,p->passMode,p->place,o_);
+		c_quad * tmp = p;
+		p=p->next;
+		delete(tmp);
+	}
+}
+
+/* *********************** */
+
+
+#ifndef LF_PARAM_NUM_MAX
+	#define LF_PARAM_NUM_MAX 2
+#endif
+#ifndef LF_FUNC_NUM
+	#define LF_FUNC_NUM 15
+#endif
+
+
+typedef struct LibFuncParam_tag {
+	char *		name;
+	Type		type;
+	PassMode	passMode;
+} LibFuncParam;
+
+typedef struct LibFunc_tag{
+	char *			name;
+	Type			returnType;
+	int				paramNum;
+	LibFuncParam    paramList[LF_PARAM_NUM_MAX];
+} LibFunc;
+
+
+
+void declareLF(LibFunc lf)
+{
+	//excessive check for internal consistency
+	if(lookupEntry(lf.name,LOOKUP_ALL_SCOPES,false)!=NULL) internal("LibFunc: run-time library function %s duplicate definition",lf.name);
+	SymbolEntry * func = newFunction(lf.name);
+	forwardFunction(func);
+	openScope();
+	currentScope->returnType = lf.returnType;
+	//func->u.eFunction.firstQuad=??
+	int i;
+	for(i=0;i<lf.paramNum;i++){
+		LibFuncParam * p = &lf.paramList[i];
+		//excessive cheks for internal consistency
+		if(p==NULL) internal("LibFunc: run-time library function %s expects more parameters",lf.name);
+		if(lookupEntry(p->name,LOOKUP_CURRENT_SCOPE,false)!=NULL) internal("LibFunc: run-time library function %s has duplicate parameter %s",lf.name,p->name);
+		newParameter(p->name,p->type,p->passMode,func);
+	}
+	endFunctionHeader(func,lf.returnType);
+	closeScope();
+}
+
+
+void declareAllLibFunc()
+{
+	// here we declare all the run-time library functions
+	LibFunc libraryFunctions [LF_FUNC_NUM] = {
+		{ "puti",	typeVoid,		1, { {"n", typeInteger,			PASS_BY_VALUE}, } },
+		{ "putb",	typeVoid,		1, { {"b", typeBoolean,			PASS_BY_VALUE}, } },
+		{ "putc",	typeVoid,		1, { {"c", typeChar,			PASS_BY_VALUE}, } },
+		{ "puts",	typeVoid,		1, { {"s", typeIArray(typeChar),PASS_BY_VALUE}, } },
+		{ "geti",	typeInteger,	0, NULL											  },
+		{ "getb",	typeBoolean,	0, NULL 										  },
+		{ "getc",	typeChar,		0, NULL 										  },
+		{ "gets",	typeVoid,		2, { {"n", typeInteger,			PASS_BY_VALUE}, 
+										 {"s", typeIArray(typeChar),PASS_BY_VALUE}, } },
+		{ "abs",	typeInteger,	1, { {"n", typeInteger,			PASS_BY_VALUE}, } },
+		{ "ord",	typeInteger,	1, { {"c", typeChar,			PASS_BY_VALUE}, } },
+		{ "chr",	typeChar,		1, { {"n", typeInteger,			PASS_BY_VALUE}, } },
+		{ "strlen",	typeInteger,	1, { {"s", typeIArray(typeChar),PASS_BY_VALUE}, } },
+		{ "strcmp",	typeInteger,	2, { {"s1",typeIArray(typeChar),PASS_BY_VALUE},  
+										 {"s2",typeIArray(typeChar),PASS_BY_VALUE}, } },
+		{ "strcpy",	typeVoid,		2, { {"trg",typeIArray(typeChar),PASS_BY_VALUE}, 
+										 {"src",typeIArray(typeChar),PASS_BY_VALUE},} },
+		{ "strcat",	typeVoid,		2, { {"trg",typeIArray(typeChar),PASS_BY_VALUE}, 
+										 {"src",typeIArray(typeChar),PASS_BY_VALUE},} },
+	};
+
+	int i;
+	for(i=0;i<LF_FUNC_NUM;i++)
+		declareLF(libraryFunctions[i]);
 }
 
 
@@ -41,10 +218,33 @@ Type findArrayType(Type arrayType,int brackets)
 	Type type;
 	const char * name;
 	int val;
-	struct expr_struct {
-		Type	type;
-		bool	lval;
+	struct expr_tag {
+		Type		type;
+		bool		lval;
+		bool		cond;
+		Operand		place;
+		List *		TRUE;
+		List *		FALSE;
 	} expr;
+	struct rval_tag {
+		Type		type;
+		bool		cond;
+		Operand		place;
+		List *		TRUE;
+		List *		FALSE;
+	} rval;
+	struct atom_tag {
+		Type		type;
+		Operand		place;
+		bool		lval;
+	}atom;
+	struct call_tag {
+		Type		type;
+		Operand		place;
+	}call;
+	struct stmt_tag {
+		List *			NEXT;
+	}stmt;
 }
 
 %token T_and	"and"
@@ -83,13 +283,25 @@ Type findArrayType(Type arrayType,int brackets)
 %token<val> T_char_const
 %token<name> T_string
 
-%type<expr> expr
-%type<expr> atom
+%type<name> header
+
 %type<type> type
-%type<type> call
-%type<type> array_cell
-%type<val>	brackets
-%type<val>	bracket_list
+
+%type<stmt> stmt
+%type<stmt> stmt_list
+%type<stmt> stmt_full
+%type<stmt> if_clause
+%type<stmt> for_clause
+
+%type<expr> expr
+%type<rval> rval
+
+%type<atom> atom 
+
+%type<call> call
+
+
+
 
 %left "or"
 %left "and"
@@ -99,11 +311,27 @@ Type findArrayType(Type arrayType,int brackets)
 %left '+' '-'
 %left '*' '/' "mod"
 
+
 %%
 
-program		: {openScope();} func_def {closeScope();};
+program		: {openScope(); declareAllLibFunc();} func_def { printQuads(); printFinal(); skeletonEnd(); closeScope();}
 
-func_def	: "def" {mem.forward=0;} header ':' def_list stmt_list "end" {closeScope();} ;
+/* -------------------------------------------------------------------------------------------------------------------------------- 
+ *	BLOCK DEFINITION (FUNCTIONS)
+ * -------------------------------------------------------------------------------------------------------------------------------- */ 
+
+func_def	: "def"	{mem.forward=0;} header ':'	
+			  def_list							{genquad(O_UNIT,oU($3),o_,o_); }
+			  stmt_list 
+			  "end"								{backpatch($7.NEXT,quadNext); 
+												 genquad(O_ENDU,oU($3),o_,o_);  
+												 printQuads(); //print quads
+												 if(firstBlock) {skeletonBegin($3); firstBlock=!firstBlock;} //first func_def, main block
+												 printFinal();
+												 #ifdef DEBUG
+												 printf("scope %s closes\n",$3);
+												 #endif
+												 closeScope();} ;
 
 def_list	: func_def def_list 
 			| func_decl def_list	
@@ -113,18 +341,24 @@ def_list	: func_def def_list
 			/* checks that T_id is uniquely defined in the current scope (not already in Symbol Table) inside newFunction */
 header		: type T_id		{	mem.func = newFunction($2); 
 								if(mem.forward==1) 
-									forwardFunction(mem.func); 
+									forwardFunction(mem.func);
 								openScope();
+								#ifdef DEBUG
+								printf("scope %s opens\n",$2);
+								#endif
 								currentScope->returnType = $1;
 							} 
-				'(' formal_list ')' {endFunctionHeader(mem.func,$1);}	 
+			  '(' formal_list ')' {endFunctionHeader(mem.func,$1); $$=$2; mem.func->u.eFunction.firstQuad=quadNext;}
 			| T_id			{	mem.func = newFunction($1); 
 								if(mem.forward==1) 
 									forwardFunction(mem.func); 
 								openScope();
+								#ifdef DEBUG
+								printf("scope %s opens\n",$1);
+								#endif
 								currentScope->returnType = typeVoid;
 							} 
-				'(' formal_list ')' {endFunctionHeader(mem.func,typeVoid);}	
+			  '(' formal_list ')' {endFunctionHeader(mem.func,typeVoid); $$=$1; mem.func->u.eFunction.firstQuad=quadNext;}	
 			;
 
 formal_list	: formal formal_full | /* nothing */;
@@ -137,13 +371,19 @@ formal		: "ref" type	{mem.ref=PASS_BY_REFERENCE; mem.type=$2;}	id_par_list
 			/* checks that T_id is uniquely defined in the current scope (not already in Symbol Table) */
 id_par_list : T_id {if(lookupEntry($1,LOOKUP_CURRENT_SCOPE,false)!=NULL) ssmerror("duplicate declaration of identifier in current scope"); 
 					newParameter($1,mem.type,mem.ref,mem.func);} 
-				id_par_full ;
+			  id_par_full ;
+
 id_par_full : ',' T_id {if(lookupEntry($2,LOOKUP_CURRENT_SCOPE,false)!=NULL) ssmerror("duplicate declaration of identifier in current scope"); 
 						 newParameter($2,mem.type,mem.ref,mem.func);} 
-				id_par_full 
-			| /* nothing */ ;
+			  id_par_full 
+			| /* nothing */ 
 
 
+/* -------------------------------------------------------------------------------------------------------------------------------- 
+ *	TYPES & VARIABLES
+ * -------------------------------------------------------------------------------------------------------------------------------- */ 
+
+																												/* Attributes: type */
 type		: "int"					{$$=typeInteger;}
 			| "bool"				{$$=typeBoolean;}
 			| "char"				{$$=typeChar;}
@@ -174,204 +414,461 @@ id_full		: ',' T_id	{if(lookupEntry($2,LOOKUP_CURRENT_SCOPE,false)!=NULL)
 						} 
 				id_full 
 			| /* nothing */
+			
+
+/* -------------------------------------------------------------------------------------------------------------------------------- 
+ *	STATEMENTS			
+ * -------------------------------------------------------------------------------------------------------------------------------- */ 
+
+																												/* Attributes: NEXT */
+stmt_list	: stmt {mem.lnext=$1.NEXT;}			stmt_full {$$.NEXT=$3.NEXT;}
+stmt_full	: {backpatch(mem.lnext,quadNext);}	stmt	  {mem.lnext=$2.NEXT;} stmt_full {$$.NEXT=$4.NEXT;}
+			| /* nothing */{$$.NEXT=mem.lnext;}
 			;
 
-
-stmt_list	: stmt stmt_full
-stmt_full	: stmt stmt_full
-			| /* nothing */;
-
-stmt		: simple 
-			/* check that this exit stmt is in a block (function) with a return type TYPE_VOID */
-			| "exit"			{if(!equalType(currentScope->returnType,typeVoid)) sserror("exit statement no allowed in a non void block");}
-			/* check that this return stmt is in a block (function) with a return type t same as the expr.type */ 
-			| "return" expr		{if(!equalType(currentScope->returnType,$2.type)) sserror("return statement is of different type than epxected");}
-			| if_clause 
-			| for_clause
+stmt		: simple			{$$.NEXT=emptylist();}
+								/* check that this exit stmt is in a block (function) with a return type TYPE_VOID */
+			| "exit"			{if(!equalType(currentScope->returnType,typeVoid)) sserror("exit statement no allowed in a non void block"); 
+								 genquad(O_RET,o_,o_,o_);
+								 $$.NEXT=emptylist();}
+								/* check that this return stmt is in a block (function) with a return type t same as the expr.type */ 
+			| "return" expr		{if(!equalType(currentScope->returnType,$2.type)) sserror("return statement is of different type than epxected");
+								 if($2.cond) $2.place = evaluateCondition($2.TRUE,$2.FALSE);
+								 genquad(O_ASSIGN,$2.place,o_,oRESULT);
+								 genquad(O_RET,o_,o_,o_);
+								 $$.NEXT=emptylist();}
+			| if_clause			{$$.NEXT=$1.NEXT;} 
+			| for_clause		{$$.NEXT=$1.NEXT;}
 			;		
 
-for_clause	: "for" simple_list ';' expr ';' simple_list ':' stmt_list "end" 
-			/* check that expr has type bool */ 
-			{if(!equalType($4.type,typeBoolean)) sserror("condition expression in for clause must be boolean");}
 
-			/* check that expr has type bool, if an expression is evaluated true then we do not evaluate the other elif/else branches */ 
-			/* the following of grammar allows the desired behaviour from is-clauses */
-if_clause	: "if" expr {if(!equalType($2.type,typeBoolean)) ssmerror("condition expression in if must be boolean");} 
-				':' stmt_list elsif_clause else_clause "end" ;
-
-elsif_clause: "elsif" expr {if(!equalType($2.type,typeBoolean)) ssmerror("condition expression in elsif must be boolean");} 
-				':' stmt_list elsif_clause 
-			| /* nothing */;
-
-else_clause	: "else" ':' stmt_list 
-			| /* nothing */;
+for_clause	: "for" simple_list ';' {mem.condLabel=quadNext;}
+				expr ';'			{if(!equalType($5.type,typeBoolean)) sserror("second part of 'for' clause must be a boolean expression");
+									 if(!$5.cond) {ListPair l = createCondition($5.place); $5.TRUE=l.TRUE; $5.FALSE=l.FALSE;}
+									 mem.loopLabel=quadNext;}	
+				simple_list ':'		{genquad(O_JUMP,o_,o_,oL(mem.condLabel));	backpatch($5.TRUE,quadNext);}
+				stmt_list			{backpatch($11.NEXT,mem.loopLabel);			genquad(O_JUMP,o_,o_,oL(mem.loopLabel));}
+				"end"				{$$.NEXT=$5.FALSE;} 
 
 
-simple		: "skip" 
-			| atom ":=" expr {	/* atom is l-value && expr.type=atom.type */
-								if($1.lval==false)				sserror("expression in left of assigment must be an l-value");
-								if(!equalType($1.type,$3.type))	sserror("type mismatch in assigment: left expr is %s while right is %s",
-																		 typeToStr($1.type),typeToStr($3.type));
-							 }  
-			| call 
+
+/* ----- IF ---- */
+
+			/* the following form of grammar allows the desired precedence behaviour from if-clauses */
+if_clause	: "if" expr			{if(!equalType($2.type,typeBoolean)) sserror("condition of 'if' clause must be a boolean expression");
+								 if(!$2.cond) {ListPair l = createCondition($2.place); $2.TRUE=l.TRUE; $2.FALSE=l.FALSE;}
+								 backpatch($2.TRUE,quadNext);		mem.lastFalse=$2.FALSE;
+								} 
+				':' stmt_list	{mem.endif=makelist(quadNext);		genquad(O_JUMP,o_,o_,oSTAR);	mem.endif=merge(mem.endif,$5.NEXT);}
+				elsif_clause 
+				else_clause 
+				"end"			{$$.NEXT=merge(mem.endif,mem.lastFalse);}
 			;
 
-simple_list	: simple simple_full ; 
+elsif_clause: "elsif"			{backpatch(mem.lastFalse,quadNext);}
+				expr			{if(!equalType($3.type,typeBoolean)) sserror("condition of 'if' clause must be a boolean expression");
+								 if(!$3.cond) {ListPair l = createCondition($3.place); $3.TRUE=l.TRUE; $3.FALSE=l.FALSE;}
+								 backpatch($3.TRUE,quadNext);					mem.lastFalse=$3.FALSE;
+								}
+				':' stmt_list	{mem.endif=merge(mem.endif,makelist(quadNext));	genquad(O_JUMP,o_,o_,oSTAR);	mem.endif=merge(mem.endif,$6.NEXT);}
+				elsif_clause 
+			| /* nothing */;
+
+else_clause	: "else" ':'		{backpatch(mem.lastFalse,quadNext);				mem.lastFalse=emptylist();}
+				stmt_list		{mem.endif=merge(mem.endif,makelist(quadNext));	genquad(O_JUMP,o_,o_,oSTAR);	mem.endif=merge(mem.endif,$4.NEXT);}
+			| /* nothing */
+
+/* ------------- */
+
+
+/* all simple commands have NEXT=emptylist() so w do not bother assigning NEXT attribute to simple or simple lists*/
+
+simple		: "skip"			
+								 /* atom is l-value && expr.type=atom.type */
+			| atom ":=" expr	{if(!$1.lval) sserror("expression in the left of asssigment is not an lvalue as it should be");
+								 if(!equalType($1.type,$3.type))	
+									 sserror("type mismatch in assigment: left expr is %s while right is %s",typeToStr($1.type),typeToStr($3.type));
+								 if($3.cond) $3.place = evaluateCondition($3.TRUE,$3.FALSE);
+								 genquad(O_ASSIGN,$3.place,o_,$1.place);
+								}  
+			| call				
+			;
+
+simple_list	: simple simple_full 
 simple_full	: ',' simple simple_full | /* nothing */
 
+
+
+/* -------------------------------------------------------------------------------------------------------------------------------- 
+ *	FUNCTION CALLS
+ * -------------------------------------------------------------------------------------------------------------------------------- */ 
+
+																										/* Attributes: type, place */
+
 			/* check that T_id is ENTRY_FUNCTION && check function call limitations */
-call		: T_id '('			{	SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
-									if(s->entryType!=ENTRY_FUNCTION) ssmerror("identifier is not a function");
-									mem.arg=s->u.eFunction.firstArgument;
-									mem.type=s->u.eFunction.resultType;
+call		: T_id '('			{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
+								 if(s->entryType!=ENTRY_FUNCTION) ssmerror("identifier is not a function");
+								 c_push(s,s->u.eFunction.firstArgument);
 								}	
-				expr_list ')'	{$$=mem.type;}
-			| T_id '(' ')'		{	SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
-									if(s->entryType!=ENTRY_FUNCTION) sserror("identifier is not a function");
-									if(s->u.eFunction.firstArgument!=NULL) sserror("function expects more arguments");
-									$$=s->u.eFunction.resultType;
+				expr_list ')'	{SymbolEntry *s = c_getFunc(); 
+								 c_generateQuads(c_getQuads());
+								 if(!equalType(s->u.eFunction.resultType,typeVoid)){
+									 SymbolEntry * w = newTemporary(s->u.eFunction.resultType);
+									 genquad(O_PAR,oRET,oS(w),o_);
+									 $$.place= oS(w);
+									 }
+								 else $$.place=NULL;
+								 genquad(O_CALL,o_,o_,oU(s->id)); 
+								 $$.type=s->u.eFunction.resultType;
+								 c_pop();
+								}
+			| T_id '(' ')'		{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
+								 if(s->entryType!=ENTRY_FUNCTION)		sserror("identifier is not a function");
+								 if(s->u.eFunction.firstArgument!=NULL) sserror("function %s expects more arguments",s->id);
+								 if(!equalType(s->u.eFunction.resultType,typeVoid)){
+									 SymbolEntry * w = newTemporary(s->u.eFunction.resultType);
+									 genquad(O_PAR,oRET,oS(w),o_);
+									 $$.place= oS(w);
+									 }
+								 else $$.place=NULL;
+								 genquad(O_CALL,o_,o_,oU(s->id)); 
+								 $$.type=s->u.eFunction.resultType;
 								}	
-			;
+			
 
-expr_list	: expr				{	if(mem.arg==NULL)								
-										ssmerror("function expects less arguments");
-									if(!equalType($1.type,mem.arg->u.eParameter.type))	
-										ssmerror("type mismatch in function arguments: expected %s but found %s\n",
-												 typeToStr(mem.arg->u.eParameter.type),typeToStr($1.type));
-									if(mem.arg->u.eParameter.mode==PASS_BY_REFERENCE && $1.lval==false)			
-										ssmerror("parameter pass is by reference but argument is not an l-value");
-									mem.arg=mem.arg->u.eParameter.next;
+expr_list	: expr				{SymbolEntry * arg = c_getArg();
+								 if(arg==NULL)								
+									ssmerror("function %s expects less arguments",c_getFunc()->id);
+								 if(!equalType($1.type,arg->u.eParameter.type))	
+									ssmerror("type mismatch in function arguments: expected %s but found %s\n",
+											 typeToStr(arg->u.eParameter.type),typeToStr($1.type));
+								 if($1.cond) $1.place = evaluateCondition($1.TRUE,$1.FALSE);
+								 if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $1.lval==false)			
+									ssmerror("parameter pass is by reference but argument is not an l-value");
+								 else if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $1.lval==true)
+									c_addQuad(oR,$1.place); 
+							 	 else if (arg->u.eParameter.mode==PASS_BY_VALUE)
+									c_addQuad(oV,$1.place);
+								 else internal("unmatched parameter case");
+								 #ifdef DEBUG
+								 c_printQuads();
+								 #endif
+								 c_setArg(arg->u.eParameter.next);
 								}
 				expr_full
-			;
+			
 
-expr_full	:',' expr			{	if(mem.arg==NULL)								
-										ssmerror("function expects less arguments");
-									if(!equalType($2.type,mem.arg->u.eParameter.type))	
-										ssmerror("type mismatch in function arguments: expected %s but found %s\n",
-												 typeToStr(mem.arg->u.eParameter.type),typeToStr($2.type));
-									if(mem.arg->u.eParameter.mode==PASS_BY_REFERENCE && $2.lval==false)			
-										ssmerror("parameter pass is by reference but argument is not an l-value");
-									mem.arg=mem.arg->u.eParameter.next;
+expr_full	:',' expr			{SymbolEntry * arg = c_getArg();
+								 if(arg==NULL)								
+									ssmerror("function %s expects less arguments",c_getFunc()->id);
+								 if(!equalType($2.type,arg->u.eParameter.type))	
+									ssmerror("type mismatch in function arguments: expected %s but found %s\n",
+											 typeToStr(arg->u.eParameter.type),typeToStr($2.type));
+								 if($2.cond) $2.place = evaluateCondition($2.TRUE,$2.FALSE);
+								 if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $2.lval==false)			
+									ssmerror("parameter pass is by reference but argument is not an l-value");
+								 else if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $2.lval==true)
+									c_addQuad(oR,$2.place);
+							 	 else if (arg->u.eParameter.mode==PASS_BY_VALUE) 
+									c_addQuad(oV,$2.place);
+								 else internal("unmatched parameter case");
+								 #ifdef DEBUG
+								 c_printQuads();
+								 #endif
+								 c_setArg(arg->u.eParameter.next);
 								}
-				expr_full
-			| /* nothing */		{	if(mem.arg!=NULL) sserror("function expects more arguments");}
-			;
+				expr_full		
+			| /* nothing */		{if(c_getArg()!=NULL) sserror("function %s expects more arguments",c_getFunc());}
 
 
-atom		: T_id			{	SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
+
+/* -------------------------------------------------------------------------------------------------------------------------------- 
+ * ATOMS
+ * -------------------------------------------------------------------------------------------------------------------------------- */ 
+
+																									/* Attributes: type, place, lval */
+
+
+atom		: T_id				{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
 								switch(s->entryType){
 									case(ENTRY_FUNCTION):	sserror("identifier is a function and is not called properly");
 									case(ENTRY_VARIABLE):	$$.type=s->u.eVariable.type;
 									case(ENTRY_PARAMETER):	$$.type=s->u.eParameter.type;
 								}
+								$$.place=oS(s);
 								$$.lval=true;
-							}
-			| T_string		{$$.type=typeIArray(typeChar);	$$.lval=false;	newConstant(NULL,$$.type,$1);} 
-			| array_cell	{$$.type=$1;					$$.lval=true; }	/* we modified our grammar right here */
-			| call			{$$.type=$1;					$$.lval=false;}
-			;
+								}
+			| T_string			{$$.type=typeIArray(typeChar); /*FIXME: maybe here we must use pure sized array*/
+								 SymbolEntry * s = newConstant($1,$$.type,$1);
+								 $$.place=oS(s);
+								 $$.lval=false;
+								}
+			| call				{$$.type=$1.type;
+								 $$.place=$$.place;
+								 $$.lval=false;
+								}
+			| atom '[' expr ']' {if(!equalType($1.type,typeIArray(typeAny))) sserror("excessive brackets");
+								 if(!equalType($3.type,typeInteger)) sserror("expression in brackets must be integer");
+								 $$.type=($1.type)->refType;
+								 SymbolEntry * w = newTemporary(typePointer($1.type));
+								 genquad(O_ARRAY,$1.place,$3.place,oS(w));
+								 $$.place=oD(w);
+								 $$.lval=$1.lval;
+								}
+								 
 
-array_cell	: T_id bracket_list		{	SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
-										switch(s->entryType){
-											case ENTRY_FUNCTION:	sserror("identifier for array dereferencing cannot be a function");
-											case ENTRY_VARIABLE:	$$=findArrayType(s->u.eVariable.type,$2);
-											case ENTRY_PARAMETER:	$$=findArrayType(s->u.eParameter.type,$2);
-										}
-										//printf("%s type: %s\n",$1,typeToStr(s->u.eVariable.type));
-									} 
-bracket_list: '[' expr ']' brackets {$$=$4+1;	if(!equalType($2.type,typeInteger)) sserror("expression in brackets must be a non negative integer");};
-brackets	: '[' expr ']' brackets {$$=$4+1;	if(!equalType($2.type,typeInteger)) sserror("expression in brackets must be a non negative integer");}
-			| /* nothing */			{$$=0; }	
-										
-						
+/* -------------------------------------------------------------------------------------------------------------------------------- 
+ * EXPRESSIONS 
+ * -------------------------------------------------------------------------------------------------------------------------------- */ 
+
+																				/* Attributes:  type, cond, place, lval, TRUE, FALSE
+																								type, cond, place, TRUE, FALSE		*/
 
 /* check TYPES for all of the expression forms below */
-expr		: atom				{$$.type=$1.type;		$$.lval=$1.lval;}
-			| T_int_const		{$$.type=typeInteger;	$$.lval=false;	newConstant(NULL,typeInteger,$1); }
-			| T_char_const		{$$.type=typeChar;		$$.lval=false;  newConstant(NULL,typeChar,$1);    }		
-			| '(' expr ')'		{$$.type=$2.type;		$$.lval=false;  } 
-			| '+' expr			{if(equalType($2.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else sserror("operator takes int");}
-			| '-' expr			{if(equalType($2.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else sserror("operator takes int");}
-			| expr '+' expr		{if(equalType($1.type,typeInteger) && 
-									equalType($3.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else sserror("operator takes int operands");}	
-			| expr '-' expr		{if(equalType($1.type,typeInteger) && 
-									equalType($3.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else sserror("operator takes int operands");}		
-			| expr '*' expr		{if(equalType($1.type,typeInteger) && 
-									equalType($3.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else sserror("operator takes int operands");}	
-			| expr '/' expr		{if(equalType($1.type,typeInteger) && 
-									equalType($3.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else sserror("operator takes int operands");}	
-			| expr "mod" expr	{if(equalType($1.type,typeInteger) && 
-									equalType($3.type,typeInteger)) {$$.type=typeInteger; $$.lval=false;}	else sserror("operator takes int operands");}	
+expr		: atom				{$$.type=$1.type;	$$.lval=$1.lval;$$.place=$1.place;	$$.cond=false;	}
+			| rval				{$$.type=$1.type;	$$.lval=false;	$$.place=$1.place;	$$.cond=$1.cond;}
+			
+rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeInteger,$1) );	}
+			| T_char_const		{$$.type=typeChar;		$$.place = oS( newConstant(NULL,typeChar,$1)    );	}		
+			| '(' expr ')'		{$$.type=$2.type;
+								 $$.cond=$2.cond;
+								 if($2.cond)	{$$.TRUE=$2.TRUE;	$$.FALSE=$2.FALSE;} 
+								 else			 $$.place=$2.place; 
+								} 
+			| '+' expr			{if(!equalType($2.type,typeInteger)) sserror("operator takes int");
+								 $$.type=typeInteger;	$$.place=$2.place;	$$.cond=false;
+								}
+			| '-' expr			{if(!equalType($2.type,typeInteger)) sserror("operator works only on int operands");
+								 $$.type=typeInteger; 
+								 SymbolEntry * w = newTemporary(typeInteger);
+								 genquad(O_SUB,oS(newConstant("0",typeInteger,0)),$2.place,oS(w));
+								 $$.place=oS(w);
+								 $$.cond=false;
+								}	
+			| expr '+' expr		{if(!equalType($1.type,typeInteger) || !equalType($3.type,typeInteger)) sserror("operator work only on int operands");
+								 $$.type=typeInteger; 
+								 SymbolEntry * w = newTemporary(typeInteger);
+								 genquad(O_ADD,$1.place,$3.place,oS(w));
+								 $$.place=oS(w);
+								 $$.cond=false;
+								}	
+			| expr '-' expr		{if(!equalType($1.type,typeInteger) || !equalType($3.type,typeInteger)) sserror("operator works only on int operands");
+								 $$.type=typeInteger; 
+								 SymbolEntry * w = newTemporary(typeInteger);
+								 genquad(O_SUB,$1.place,$3.place,oS(w));
+								 $$.place=oS(w);
+								 $$.cond=false;
+								}	
+			| expr '*' expr		{if(!equalType($1.type,typeInteger) || !equalType($3.type,typeInteger)) sserror("operator works only on int operands");
+								 $$.type=typeInteger; 
+								 SymbolEntry * w = newTemporary(typeInteger);
+								 genquad(O_MULT,$1.place,$3.place,oS(w));
+								 $$.place=oS(w);
+								 $$.cond=false;
+								}	
+			| expr '/' expr		{if(!equalType($1.type,typeInteger) || !equalType($3.type,typeInteger)) sserror("operator works only on int operands");
+								 $$.type=typeInteger; 
+								 SymbolEntry * w = newTemporary(typeInteger);
+								 genquad(O_DIV,$1.place,$3.place,oS(w));
+								 $$.place=oS(w); 
+								 $$.cond=false;
+								}	
+			| expr "mod" expr	{if(!equalType($1.type,typeInteger) || !equalType($3.type,typeInteger)) sserror("operator works only on int operands");
+								 $$.type=typeInteger; 
+								 SymbolEntry * w = newTemporary(typeInteger);
+								 genquad(O_MOD,$1.place,$3.place,oS(w));
+								 $$.place=oS(w);
+								 $$.cond=false;
+								}
+
 			| expr '=' expr		{if(!equalType($1.type,$3.type)) 
-									sserror("type mismatch between operands: arg1 %s arg2 %s",typeToStr($1.type),typeToStr($3.type));
+									sserror("type mismatch between operands: 'arg1 %s' and arg2 '%s'",typeToStr($1.type),typeToStr($3.type));
 								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
 									sserror("comparison allowed only between basic types");
 								 $$.type=typeBoolean;
-								 $$.lval=false;			}
+								 $$.cond=true;
+								 if($1.cond)	$1.place = evaluateCondition($1.TRUE,$1.FALSE);
+								 if($3.cond)	$3.place = evaluateCondition($3.TRUE,$3.FALSE);
+								 $$.TRUE=makelist(quadNext);
+								 genquad(O_EQ,$1.place,$3.place,oSTAR);
+								 $$.FALSE=makelist(quadNext);
+								 genquad(O_JUMP,o_,o_,oSTAR);
+								}
 			| expr "<>" expr	{if(!equalType($1.type,$3.type)) 
-									sserror("type mismatch between operands: arg1 %s arg2 %s",typeToStr($1.type),typeToStr($3.type));
+									sserror("type mismatch between operands: arg1 '%s' and arg2 '%s'",typeToStr($1.type),typeToStr($3.type));
 								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
 									sserror("comparison allowed only between basic types");
 								 $$.type=typeBoolean;
-								 $$.lval=false;			}
-
+								 $$.cond=true;
+								 if($1.cond)	$1.place = evaluateCondition($1.TRUE,$1.FALSE);
+								 if($3.cond)	$3.place = evaluateCondition($3.TRUE,$3.FALSE);
+								 $$.TRUE=makelist(quadNext);
+								 genquad(O_NE,$1.place,$3.place,oSTAR);
+								 $$.FALSE=makelist(quadNext);
+								 genquad(O_JUMP,o_,o_,oSTAR);
+								}
 			| expr '<' expr		{if(!equalType($1.type,$3.type)) 
-									sserror("type mismatch between operands: arg1 %s arg2 %s",typeToStr($1.type),typeToStr($3.type));
+									sserror("type mismatch between operands: arg1 '%s' and arg2 '%s'",typeToStr($1.type),typeToStr($3.type));
 								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
 									sserror("comparison allowed only between basic types");
 								 $$.type=typeBoolean;
-								 $$.lval=false;			}
-
-			| expr '>' expr		{if(!equalType($1.type,$3.type))
-									sserror("type mismatch between operands: arg1 %s arg2 %s",typeToStr($1.type),typeToStr($3.type));
+								 $$.cond=true;
+								 if($1.cond)	$1.place = evaluateCondition($1.TRUE,$1.FALSE);
+								 if($3.cond)	$3.place = evaluateCondition($3.TRUE,$3.FALSE);
+								 $$.TRUE=makelist(quadNext);
+								 genquad(O_LT,$1.place,$3.place,oSTAR);
+								 $$.FALSE=makelist(quadNext);
+								 genquad(O_JUMP,o_,o_,oSTAR);
+								}
+			| expr '>' expr		{if(!equalType($1.type,$3.type)) 
+									sserror("type mismatch between operands: arg1 '%s' and arg2 '%s'",typeToStr($1.type),typeToStr($3.type));
 								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
 									sserror("comparison allowed only between basic types");
 								 $$.type=typeBoolean;
-								 $$.lval=false;			}
-
-			| expr "<=" expr	{if(!equalType($1.type,$3.type))
-									sserror("type mismatch between operands: arg1 %s arg2 %s",typeToStr($1.type),typeToStr($3.type));
+								 $$.cond=true;
+								 if($1.cond)	$1.place = evaluateCondition($1.TRUE,$1.FALSE);
+								 if($3.cond)	$3.place = evaluateCondition($3.TRUE,$3.FALSE);
+								 $$.TRUE=makelist(quadNext);
+								 genquad(O_GT,$1.place,$3.place,oSTAR);
+								 $$.FALSE=makelist(quadNext);
+								 genquad(O_JUMP,o_,o_,oSTAR);
+								}
+			| expr "<=" expr	{if(!equalType($1.type,$3.type)) 
+									sserror("type mismatch between operands: arg1 '%s' and arg2 '%s'",typeToStr($1.type),typeToStr($3.type));
 								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
 									sserror("comparison allowed only between basic types");
 								 $$.type=typeBoolean;
-								 $$.lval=false;			}
-
+								 $$.cond=true;
+								 if($1.cond)	$1.place = evaluateCondition($1.TRUE,$1.FALSE);
+								 if($3.cond)	$3.place = evaluateCondition($3.TRUE,$3.FALSE);
+								 $$.TRUE=makelist(quadNext);
+								 genquad(O_LE,$1.place,$3.place,oSTAR);
+								 $$.FALSE=makelist(quadNext);
+								 genquad(O_JUMP,o_,o_,oSTAR);
+								}	
 			| expr ">=" expr	{if(!equalType($1.type,$3.type)) 
-									sserror("type mismatch between operands: arg1 %s arg2 %s",typeToStr($1.type),typeToStr($3.type));
+									sserror("type mismatch between operands: arg1 '%s' and arg2 '%s'",typeToStr($1.type),typeToStr($3.type));
 								 if((!equalType($1.type,typeInteger)) && (!equalType($1.type,typeChar)) && (!equalType($1.type,typeBoolean)))
 									sserror("comparison allowed only between basic types");
 								 $$.type=typeBoolean;
-								 $$.lval=false;			}
+								 $$.cond=true;
+								 if($1.cond)	$1.place = evaluateCondition($1.TRUE,$1.FALSE);
+								 if($3.cond)	$3.place = evaluateCondition($3.TRUE,$3.FALSE);
+								 $$.TRUE=makelist(quadNext);
+								 genquad(O_GE,$1.place,$3.place,oSTAR);
+								 $$.FALSE=makelist(quadNext);
+								 genquad(O_JUMP,o_,o_,oSTAR);
+								}
 
-			| "true"			{$$.type=typeBoolean;	$$.lval=false;}
-			| "false"			{$$.type=typeBoolean;	$$.lval=false;}
-			| "not" expr		{$$.type=typeBoolean;	$$.lval=false;}
+			| "not" expr		{if(!equalType($2.type,typeBoolean)) sserror("operator 'not' can be used only on boolean expression");
+								 if(!$2.cond)	{ ListPair l = createCondition($2.place);	$2.TRUE=l.TRUE;	$2.FALSE=l.FALSE;	}
+								 $$.TRUE=$2.FALSE;	
+								 $$.FALSE=$2.TRUE;
+								 $$.type=typeBoolean;
+								 $$.cond=true;
+								}
 
-			| expr "and" expr	{if(equalType($1.type,typeBoolean) && equalType($3.type,typeBoolean)) {$$.type=typeBoolean; $$.lval=false;} 
-								 else sserror("operator takes boolean operands");}
+			| expr "and"		{if(!equalType($1.type,typeBoolean)) sserror("operator 'and' can be used only on boolean expression"); 
+								 if(!$1.cond) { ListPair l = createCondition($1.place);		$1.TRUE=l.TRUE;	$1.FALSE=l.FALSE;	}
+								 backpatch($1.TRUE,quadNext);
+								} 
+			  expr				{if(!equalType($4.type,typeBoolean)) sserror("operator 'and' can be used only on boolean expression"); 
+								 if(!$4.cond) { ListPair l = createCondition($4.place);		$4.TRUE=l.TRUE;	$4.FALSE=l.FALSE;	}
+								 $$.FALSE=merge($1.FALSE,$4.FALSE);		
+								 $$.TRUE=$4.TRUE;	
+								 $$.type=typeBoolean;
+								 $$.cond=true; 
+								}
 
-			| expr "or" expr	{if(equalType($1.type,typeBoolean) && equalType($3.type,typeBoolean)) {$$.type=typeBoolean; $$.lval=false;}
-								 else sserror("operator takes boolean operands");}
+			| expr "or"			{if(!equalType($1.type,typeBoolean)) sserror("operator 'or' can be used only on boolean expression"); 
+								 if(!$1.cond) { ListPair l = createCondition($1.place);		$1.TRUE=l.TRUE;	$1.FALSE=l.FALSE;	}
+								 backpatch($1.FALSE,quadNext);
+								}
+			  expr				{if(!equalType($4.type,typeBoolean)) sserror("operator 'or' can be used only on boolean expression"); 
+								 if(!$4.cond) { ListPair l = createCondition($4.place);		$4.TRUE=l.TRUE;	$4.FALSE=l.FALSE;	}
+								 $$.TRUE=merge($1.TRUE,$4.TRUE);		
+								 $$.FALSE=$4.FALSE;	
+								 $$.type=typeBoolean;
+								 $$.cond=true;
+								}
 
-			| "new" type '[' expr ']'	{if(equalType($4.type,typeInteger)) {$$.type=typeIArray($2); $$.lval=false;}
-										 else sserror("array size must be integer whereas expression in brackets is %s",typeToStr($4.type));}
+			| "true"			{$$.type=typeBoolean;	$$.place=oS(newConstant("true",typeBoolean,true));	$$.cond=false;}
+			| "false"			{$$.type=typeBoolean;	$$.place=oS(newConstant("false",typeBoolean,false));$$.cond=false;}
+
+			| "new" type '[' expr ']'	{if(!equalType($4.type,typeInteger))  
+											sserror("array size must be integer whereas expression in brackets is %s",typeToStr($4.type));
+										 $$.type=typeIArray($2); 
+										 Operand w = oS(newTemporary(typeInteger));						//size of array in bytes
+										 Operand z = oS(newTemporary($$.type));							//place for result of newarrv
+										 // if type is array of any or list of any then use newarrp
+										 if(equalType($2,typeIArray(typeAny)) || equalType($2,typeList(typeAny))){
+											Operand s = oS(newConstant(NULL,typeInteger,sizeOfType($2)/2));	//size of referenced type in words FIXME
+											genquad(O_MULT,$4.place,s,w);
+											genquad(O_PAR,oV,w,o_);
+											genquad(O_PAR,oRET,z,o_);
+											genquad(O_CALL,o_,o_,oU("newarrp"));
+										 } else {
+											Operand s = oS(newConstant(NULL,typeInteger,sizeOfType($2)));	//size of referenced type in bytes
+											genquad(O_MULT,$4.place,s,w);
+											genquad(O_PAR,oV,w,o_);
+											genquad(O_PAR,oRET,z,o_);
+											genquad(O_CALL,o_,o_,oU("newarrv"));
+										 }
+										 $$.place=z;
+										 $$.cond=false;
+										}
+
 
 			| expr '#' expr				{if(equalType($3.type,typeList(typeAny)) && equalType($1.type,$3.type->refType)) 
-											{$$.type=$3.type; $$.lval=false;}
-										 else sserror("type mismatch in list construction (head: %s tail: %s)",typeToStr($1.type),typeToStr($1.type));}
+											$$.type=typeList($1.type); 
+										 else sserror("type mismatch in list construction (head: %s tail: %s)",typeToStr($1.type),typeToStr($1.type));
+										 if($1.cond) $1.place = evaluateCondition($1.TRUE,$1.FALSE);
+										 Operand z = oS(newTemporary($$.type));
+										 if(equalType($1.type,typeIArray(typeAny)) || equalType($1.type,typeList(typeAny))){
+											 genquad(O_PAR,oV,$1.place,o_);
+											 genquad(O_PAR,oV,$3.place,o_);
+											 genquad(O_PAR,oRET,z,o_);
+											 genquad(O_CALL,o_,o_,oU("consp"));
+										 } else {
+											 genquad(O_PAR,oV,$1.place,o_);
+											 genquad(O_PAR,oV,$3.place,o_);
+											 genquad(O_PAR,oRET,z,o_);
+											 genquad(O_CALL,o_,o_,oU("consv"));
+										 }
+										 $$.place=z;
+										 $$.cond=false;
+										}
 
-			| "nil"						{$$.type=typeList(typeAny);	$$.lval=false;}
+			/*FIXME: nil, nil? */
 
-			| "nil?" '(' expr ')'		{if(equalType($3.type,typeList(typeAny))) {$$.type=typeBoolean; $$.lval=false;}
-										 else sserror("expression in brackets must be some list type");}
+			| "nil"						{$$.type=typeList(typeAny);		$$.place=oS(newConstant("nil",$$.type));}
 
-			| "head" '(' expr ')'		{if(equalType($3.type,typeList(typeAny))) {$$.type=$3.type->refType; $$.lval=false;}
-										 else sserror("expression in brackets must be some list type but is %s",typeToStr($3.type));}
+			| "nil?" '(' expr ')'		{if(!equalType($3.type,typeList(typeAny))) sserror("expression in brackets must be some list type");
+										 $$.type=typeBoolean;
+										 }
 
-			| "tail" '(' expr ')'		{if(equalType($3.type,typeList(typeAny))) {$$.type=$3.type;}			 
-										 else sserror("expression in brackets must be some list type");}
+			| "head" '(' expr ')'		{if(!equalType($3.type,typeList(typeAny))) 
+											sserror("expression in brackets must be some list type but is %s",typeToStr($3.type));
+										 $$.type=$3.type->refType;
+										 Operand z = oS(newTemporary($$.type));
+										 genquad(O_PAR,oV,$3.place,o_);
+										 genquad(O_PAR,oRET,z,o_);
+										 genquad(O_CALL,o_,o_,oU("head"));
+										 $$.place=z;
+										 $$.cond=false;
+										}
+
+			| "tail" '(' expr ')'		{if(!equalType($3.type,typeList(typeAny))) sserror("expression in brackets must be some list type");
+										 $$.type=$3.type;
+										 Operand z = oS(newTemporary($$.type));
+										 genquad(O_PAR,oV,$3.place,o_);
+										 genquad(O_PAR,oRET,z,o_);
+										 genquad(O_CALL,o_,o_,oU("tail"));
+										 $$.place=z;
+										 $$.cond=false;
+										}
 			
+
 
 /* function call limitations 
  * 1. T_id name of the function exists in current scope
@@ -382,25 +879,36 @@ expr		: atom				{$$.type=$1.type;		$$.lval=$1.lval;}
 /* In each T_id allocation we must check if the specific T_id is uniqe = 1st time to be created. ONLY in T_id ALLOCAATION */
 
 
+/* =================================================================================================================================== */
+/* =================================================================================================================================== */
+
 %%
 
 extern FILE *	yyin;
-extern char *	yytext;
+extern FILE *	iout;
+
+#ifdef INTERMEDIATE
+FILE *	fout;
+#else
+extern FILE * fout;
+#endif
+
 
 const char *	filename;
 
-bool FFLAG = false;
-bool IFLAG = false;
-bool OFLAG = false;
 
 /* For syntax errors: called implicitly by parser */
 int yyerror(const char *msg){
 	fprintf(stderr, "%s:%d: ", filename, linecount);
 	fprintf(stderr,"syntax error: %s\n",msg);
-	exit(1);
+	exit(SYNTAX_ERRNUM);
 }
 
 void parseArguments(int argc,char * argv[]){
+
+	bool FFLAG = false; 
+	bool IFLAG = false;
+	bool OFLAG = false;
 
 	int i, fileArg=0;
 	for(i=1;i<argc;i++){
@@ -423,23 +931,49 @@ void parseArguments(int argc,char * argv[]){
 	/* Input Filename Specification */
 	if(FFLAG || IFLAG)
 		filename="stdin";
-	else
+	else{
 		filename = argv[fileArg];
+		yyin = fopen(filename,"r"); //Open file and redirect yylex to it
+		if(yyin==NULL) fatal("filename %s is not valid. The file cannot be found.",filename);
+	}
 
+	/* FIXME: cleaning is not handled properly */
+	#define EXTENSION_SIZE 5
+	unsigned int size = strlen(filename) + EXTENSION_SIZE; 
+	char fclean[size], buf[size];
+	strcpy(fclean,filename);
+	//fclean[strchr(fclean,'.')-fclean]='\0';
+
+	/* Intermediate Code Filename Sepcification */ 
+	if(!IFLAG){
+		sprintf(buf,"%s.imm",fclean);
+		iout = fopen(buf,"w");
+	}else
+		iout = stdout;
+	
+	/* Final Code Filename Sepcification */ 
+	if(!FFLAG){
+		sprintf(buf,"%s.asm",fclean);
+		fout = fopen(buf,"w");
+	}else
+		fout = stdout;
 }
 
+void sigsegv_hndler(int signum)
+{
+	error("SIGSEV (Segmentation fault) caught. Printing and exiting...");
+	if(iout!=NULL) {printQuads();	fflush(iout);	fclose(iout);}
+	if(fout!=NULL) {printFinal();	fflush(fout);	fclose(fout);}
+	fatal("SIGSEV: exited");
+}
 
 int main(int argc, char * argv[]){
 
+	/* Install Singal Handler */
+	signal(SIGSEGV, sigsegv_hndler);
 
 	/* Arguments parsing */
 	parseArguments(argc,argv);
-
-	/* Open file and redirect yylex to it */
-	if(!FFLAG && !IFLAG){
-		yyin = fopen(filename,"r");
-		if(yyin==NULL) fatal("filename %s is not valid. The file cannot be found.",filename);
-	}
 
 	/* Initializing Symbol Table  */
 #ifndef SYMBOLTABLE_SIZE

@@ -33,6 +33,7 @@
 extern char lastWhitespace;
 extern char * yytext;
 
+
 /* ---------------------------------------------------------------------
    --------- Υλοποίηση των συναρτήσεων του χειριστή σφαλμάτων ----------
    --------------------------------------------------------------------- */
@@ -50,7 +51,8 @@ void internal (const char * fmt, ...)
    vfprintf(stderr, fmt, ap);
    fprintf(stderr, "\n");
    va_end(ap);
-   exit(1);
+   //FIXME: here fremove("filename") to delete .imm and .asm files if a syntax error is spotted
+   exit(INTERNAL_ERRNUM);
 }
 
 void fatal (const char * fmt, ...)
@@ -66,7 +68,7 @@ void fatal (const char * fmt, ...)
    vfprintf(stderr, fmt, ap);
    fprintf(stderr, "\n");
    va_end(ap);
-   exit(1);
+   exit(FATAL_ERRNUM);
 }
 
 void error (const char * fmt, ...)
@@ -120,7 +122,7 @@ void sserror(const char * fmt, ...)
    vfprintf(stderr, fmt, ap);
    fprintf(stderr, "\n");
    va_end(ap);
-   exit(1);
+   exit(SEMANTIC_ERRNUM);
 }
 
 
@@ -140,5 +142,5 @@ void ssmerror(const char * fmt, ...)
    vfprintf(stderr, fmt, ap);
    fprintf(stderr, "\n");
    va_end(ap);
-   exit(1);
+   exit(SEMANTIC_ERRNUM);
 }
