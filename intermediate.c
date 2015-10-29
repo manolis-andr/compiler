@@ -26,6 +26,8 @@
    ---------------------- Global variables ---------------------
    ------------------------------------------------------------- */
 
+FILE * iout = NULL;
+
 #ifndef QUAD_ARRAY_SIZE
 #define QUAD_ARRAY_SIZE 256
 #endif
@@ -39,15 +41,16 @@ static struct Operand_tag operandConst [] = {
 		{ OPERAND_PASSMODE,	"R",	NULL },
 		{ OPERAND_PASSMODE,	"RET",	NULL },
 		{ OPERAND_NULL,		"-",	NULL },	
-		{ OPERAND_STAR,		"*",	NULL }
+		{ OPERAND_STAR,		"*",	NULL },
+		{ OPERAND_RESULT,	"$$",	NULL }
 };
 
 const Operand oV    = &(operandConst[0]);
 const Operand oR	= &(operandConst[1]);
 const Operand oRET	= &(operandConst[2]);
 const Operand o_	= &(operandConst[3]);
-const Operand oSTAR = &(operandConst[4]);
-
+const Operand oSTAR	= &(operandConst[4]);
+const Operand oRESULT =	&(operandConst[5]);
 
 /* -------------------------------------------------------------
    ------------------------- Functions -------------------------
@@ -75,9 +78,16 @@ Operand oL(int quadLabel)
 
 Operand oU(const char * unitName)
 {
+	#ifdef DEBUG
+	printf("oU: %s\n",unitName);
+	#endif
 	Operand o = (Operand ) new(sizeof(struct Operand_tag));
 	o->type = OPERAND_UNIT;
 	o->name = unitName;
+	o->u.unitNum = lookupEntry(unitName,LOOKUP_ALL_SCOPES,false)->u.eFunction.serialNum;
+	#ifdef DEBUG
+	printf("oU: %s finished\n",unitName);
+	#endif
 	return o;
 }
 
@@ -90,6 +100,7 @@ Operand oD(SymbolEntry * s)
 	snprintf(buf,buf_size,"[%s]",s->id);
 	o->name = strdup(buf);
 	o->u.symbol = s;
+	return o;
 }
 
 Operand oA(SymbolEntry * s)
@@ -101,15 +112,18 @@ Operand oA(SymbolEntry * s)
 	snprintf(buf,buf_size,"{%s}",s->id);
 	o->name = strdup(buf);
 	o->u.symbol = s;
+	return o;
 }
 
-void genquad(const char * op,Operand x,Operand y,Operand z)
+void genquad(OperatorType op,Operand x,Operand y,Operand z)
 {
+	q[quadNext].num= quadNext;
 	q[quadNext].op = op;
 	q[quadNext].x  = x;
 	q[quadNext].y  = y;
 	q[quadNext].z  = z;
 	quadNext++;
+	if(quadNext==QUAD_ARRAY_SIZE) internal("Maximum quad limit reached. Recompile with a greater QUAD_ARRAY_SIZE\n");
 }
 
 
@@ -117,7 +131,7 @@ void printQuads()
 {
 	int i;
 	for(i=qprintStart;i<quadNext;i++)
-		fprintf(iout,"%d: %s, %s, %s, %s\n",i,q[i].op,q[i].x->name,q[i].y->name,q[i].z->name);
+		fprintf(iout,"%d: %s, %s, %s, %s\n",q[i].num,otos(q[i].op),q[i].x->name,q[i].y->name,q[i].z->name);
 	qprintStart=quadNext;
 }
 
@@ -129,9 +143,9 @@ ListPair createCondition(Operand place)
 	#endif
 	ListPair l;
 	l.TRUE = makelist(quadNext);
-	genquad("ifb",place,o_,oSTAR);
+	genquad(O_IFB,place,o_,oSTAR);
 	l.FALSE = makelist(quadNext);
-	genquad("jump",o_,o_,oSTAR);
+	genquad(O_JUMP,o_,o_,oSTAR);
 	#ifdef DEBUG
 	printf("got out of createCondition!\n");
 	#endif
@@ -145,10 +159,10 @@ Operand evaluateCondition(List * TRUE, List * FALSE)
 	#endif
 	SymbolEntry * w = newTemporary(typeBoolean);
 	backpatch(TRUE,quadNext);
-	genquad(":=",oS(newConstant("true",typeBoolean,true)),o_,oS(w));
-	genquad("jump",o_,o_,oL(quadNext+2));
+	genquad(O_ASSIGN,oS(newConstant("true",typeBoolean,true)),o_,oS(w));
+	genquad(O_JUMP,o_,o_,oL(quadNext+2));
 	backpatch(FALSE,quadNext);
-	genquad(":=",oS(newConstant("false",typeBoolean,false)),o_,oS(w));
+	genquad(O_ASSIGN,oS(newConstant("false",typeBoolean,false)),o_,oS(w));
 	#ifdef DEBUG
 	printf("got out of evaluateCondition!\n");
 	#endif
@@ -223,6 +237,36 @@ void printList(List *l){
 		p=p->next;
 	}
 	printf("\n");
+}
+
+
+
+//operator to string - alternatively we can allocate an const char * array with those values
+const char * otos(OperatorType op)
+{
+	switch(op){
+		case O_ASSIGN:	return ":=";
+		case O_ARRAY:	return "array";
+		case O_ADD:		return "+";
+		case O_SUB:		return "-";
+		case O_MULT:	return "*";
+		case O_DIV:		return "/";
+		case O_MOD:		return "mod";
+		case O_EQ:		return "=";
+		case O_NE:		return "<>";
+		case O_LT:		return "<";
+		case O_GT:		return ">";
+		case O_LE:		return "<=";
+		case O_GE:		return ">=";
+		case O_IFB:		return "ifb";
+		case O_JUMP:	return "jump";
+		case O_UNIT:	return "unit";
+		case O_ENDU:	return "endu";
+		case O_CALL:	return "call";
+		case O_RET:		return "ret";
+		case O_PAR:		return "par";
+		default:		return NULL;
+	}
 }
 
 

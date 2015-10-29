@@ -5,6 +5,8 @@
 #include "symbol.h"
 #include "intermediate.h"
 #include "parser.h"
+#include "error.h"
+
 #define T_eof	0
 
 int  linecount=1;
@@ -138,7 +140,8 @@ int charToInt(char c)
 	else if(c>='A' && c<='F')
 		return c-'A'+10;
 	else
-		error("lexer: %s not a proper char expression",yytext);
+		error("lexer: %s not a proper char expression",yytext); 
+	return -1; //only on error
 }
 	
 

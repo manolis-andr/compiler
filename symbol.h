@@ -141,6 +141,8 @@ struct SymbolEntry_tag {
              PARDEF_CHECK                        /* Εν μέσω ελέγχου    */
          } pardef;
          int           firstQuad;             /* Αρχική τετράδα        */
+		 int			posOffset;
+		 int			serialNum;			//used for assembly numbering
       } eFunction;
 
       struct {                                /****** Παράμετρος *******/

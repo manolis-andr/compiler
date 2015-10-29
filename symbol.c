@@ -450,6 +450,8 @@ void forwardFunction (SymbolEntry * f)
 
 void endFunctionHeader (SymbolEntry * f, Type type)
 {
+	static int maxSerialNum = - LF_FUNC_NUM;
+
     if (f->entryType != ENTRY_FUNCTION)
         internal("Cannot end parameters in a non-function");
     switch (f->u.eFunction.pardef) {
@@ -457,7 +459,8 @@ void endFunctionHeader (SymbolEntry * f, Type type)
             internal("Cannot end parameters in an already defined function");
             break;
         case PARDEF_DEFINE:
-            fixOffset(f->u.eFunction.firstArgument);
+			f->u.eFunction.serialNum = maxSerialNum++;
+            f->u.eFunction.posOffset = fixOffset(f->u.eFunction.firstArgument);
             f->u.eFunction.resultType = type;
             type->refCount++;
             break;
@@ -596,6 +599,8 @@ Type typePointer(Type refType)
 	n->refCount = 1;
 
 	refType->refCount++;
+
+	return n;
 }
 
 Type typeList (Type refType)

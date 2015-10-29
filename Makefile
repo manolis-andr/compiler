@@ -11,7 +11,18 @@ ifeq ($(DEBUG),1)
 	CFLAGS+= -g -DDEBUG
 endif
 
-compiler: parser.o lexer.o symbol.o general.o error.o intermediate.o
+INTERMEDIATE?=0
+ifeq ($(INTERMEDIATE),1)
+	CFLAGS+= -DINTERMEDIATE
+endif
+
+OBJS= parser.o lexer.o symbol.o general.o error.o intermediate.o
+
+ifeq ($(INTERMEDIATE),0)
+	OBJS+= final.o
+endif
+
+compiler: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ -lfl
 
 parser.c: parser.y
@@ -24,6 +35,9 @@ symbol.o: symbol.c error.o general.o
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 intermediate.o: intermediate.c error.o general.o 
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+final.o: final.c error.o general.o
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 %.o: %.c

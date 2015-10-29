@@ -38,8 +38,13 @@ void   delete (void *);
 
 extern int linecount;
 extern const char * filename;
-extern FILE * iout;
-extern FILE * fout;
+
+#ifndef LF_PARAM_NUM_MAX
+	#define LF_PARAM_NUM_MAX 2
+#endif
+#ifndef LF_FUNC_NUM
+	    #define LF_FUNC_NUM 15
+#endif
 
 
 

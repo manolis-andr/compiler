@@ -5,13 +5,22 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <unistd.h>
+#include <signal.h>
 #include <fcntl.h>
 
 #include "symbol.h"
 #include "error.h"
 #include "general.h"
 #include "intermediate.h"
-#include "final.h"
+
+#ifndef INTERMEDIATE
+	#include "final.h"
+#else
+	void printFinal() { static bool flag = true;	if(flag) {fprintf(stderr,"Intermediate code only. Make-option INTERMEDIATE=1\n"); flag=!flag;} }
+	void skeletonBegin(const char * c) {;}
+	void skeletonEnd() {;}
+#endif
 
 /* Struct for remembering previous symbol table options, when we dig deeper into the symbols */
 struct Memory{
@@ -28,6 +37,8 @@ struct Memory{
 	List *			endif;
 } mem;
 
+
+bool firstBlock = true;
 
 /* ********************************************	*
  *					c_ MODULE					*
@@ -115,7 +126,7 @@ void c_generateQuads(c_quad * quads)
 	if(quads==NULL) return;
 	c_quad * p = quads;
 	while(p!=NULL) {
-		genquad("par",p->passMode,p->place,o_);
+		genquad(O_PAR,p->passMode,p->place,o_);
 		c_quad * tmp = p;
 		p=p->next;
 		delete(tmp);
@@ -166,6 +177,7 @@ void declareLF(LibFunc lf)
 		newParameter(p->name,p->type,p->passMode,func);
 	}
 	endFunctionHeader(func,lf.returnType);
+	closeScope();
 }
 
 
@@ -302,21 +314,23 @@ void declareAllLibFunc()
 
 %%
 
-program		: {openScope(); declareAllLibFunc();} func_def { printQuads(); closeScope();}
+program		: {openScope(); declareAllLibFunc();} func_def { printQuads(); printFinal(); skeletonEnd(); closeScope();}
 
 /* -------------------------------------------------------------------------------------------------------------------------------- 
  *	BLOCK DEFINITION (FUNCTIONS)
  * -------------------------------------------------------------------------------------------------------------------------------- */ 
 
 func_def	: "def"	{mem.forward=0;} header ':'	
-			  def_list							{genquad("unit",oU($3),o_,o_); }
+			  def_list							{genquad(O_UNIT,oU($3),o_,o_); }
 			  stmt_list 
 			  "end"								{backpatch($7.NEXT,quadNext); 
-												 genquad("endu",oU($3),o_,o_);  
+												 genquad(O_ENDU,oU($3),o_,o_);  
 												 printQuads(); //print quads
-												#ifdef DEBUG
+												 if(firstBlock) {skeletonBegin($3); firstBlock=!firstBlock;} //first func_def, main block
+												 printFinal();
+												 #ifdef DEBUG
 												 printf("scope %s closes\n",$3);
-												#endif
+												 #endif
 												 closeScope();} ;
 
 def_list	: func_def def_list 
@@ -415,13 +429,13 @@ stmt_full	: {backpatch(mem.lnext,quadNext);}	stmt	  {mem.lnext=$2.NEXT;} stmt_fu
 stmt		: simple			{$$.NEXT=emptylist();}
 								/* check that this exit stmt is in a block (function) with a return type TYPE_VOID */
 			| "exit"			{if(!equalType(currentScope->returnType,typeVoid)) sserror("exit statement no allowed in a non void block"); 
-								 genquad("ret",o_,o_,o_);
+								 genquad(O_RET,o_,o_,o_);
 								 $$.NEXT=emptylist();}
 								/* check that this return stmt is in a block (function) with a return type t same as the expr.type */ 
 			| "return" expr		{if(!equalType(currentScope->returnType,$2.type)) sserror("return statement is of different type than epxected");
 								 if($2.cond) $2.place = evaluateCondition($2.TRUE,$2.FALSE);
-								 genquad("retv",$2.place,o_,o_);
-								 genquad("ret",o_,o_,o_);
+								 genquad(O_ASSIGN,$2.place,o_,oRESULT);
+								 genquad(O_RET,o_,o_,o_);
 								 $$.NEXT=emptylist();}
 			| if_clause			{$$.NEXT=$1.NEXT;} 
 			| for_clause		{$$.NEXT=$1.NEXT;}
@@ -432,8 +446,8 @@ for_clause	: "for" simple_list ';' {mem.condLabel=quadNext;}
 				expr ';'			{if(!equalType($5.type,typeBoolean)) sserror("second part of 'for' clause must be a boolean expression");
 									 if(!$5.cond) {ListPair l = createCondition($5.place); $5.TRUE=l.TRUE; $5.FALSE=l.FALSE;}
 									 mem.loopLabel=quadNext;}	
-				simple_list ':'		{genquad("jump",o_,o_,oL(mem.condLabel));	backpatch($5.TRUE,quadNext);}
-				stmt_list			{backpatch($11.NEXT,mem.loopLabel);			genquad("jump",o_,o_,oL(mem.loopLabel));}
+				simple_list ':'		{genquad(O_JUMP,o_,o_,oL(mem.condLabel));	backpatch($5.TRUE,quadNext);}
+				stmt_list			{backpatch($11.NEXT,mem.loopLabel);			genquad(O_JUMP,o_,o_,oL(mem.loopLabel));}
 				"end"				{$$.NEXT=$5.FALSE;} 
 
 
@@ -445,7 +459,7 @@ if_clause	: "if" expr			{if(!equalType($2.type,typeBoolean)) sserror("condition 
 								 if(!$2.cond) {ListPair l = createCondition($2.place); $2.TRUE=l.TRUE; $2.FALSE=l.FALSE;}
 								 backpatch($2.TRUE,quadNext);		mem.lastFalse=$2.FALSE;
 								} 
-				':' stmt_list	{mem.endif=makelist(quadNext);		genquad("jump",o_,o_,oSTAR);	mem.endif=merge(mem.endif,$5.NEXT);}
+				':' stmt_list	{mem.endif=makelist(quadNext);		genquad(O_JUMP,o_,o_,oSTAR);	mem.endif=merge(mem.endif,$5.NEXT);}
 				elsif_clause 
 				else_clause 
 				"end"			{$$.NEXT=merge(mem.endif,mem.lastFalse);}
@@ -456,12 +470,12 @@ elsif_clause: "elsif"			{backpatch(mem.lastFalse,quadNext);}
 								 if(!$3.cond) {ListPair l = createCondition($3.place); $3.TRUE=l.TRUE; $3.FALSE=l.FALSE;}
 								 backpatch($3.TRUE,quadNext);					mem.lastFalse=$3.FALSE;
 								}
-				':' stmt_list	{mem.endif=merge(mem.endif,makelist(quadNext));	genquad("jump",o_,o_,oSTAR);	mem.endif=merge(mem.endif,$6.NEXT);}
+				':' stmt_list	{mem.endif=merge(mem.endif,makelist(quadNext));	genquad(O_JUMP,o_,o_,oSTAR);	mem.endif=merge(mem.endif,$6.NEXT);}
 				elsif_clause 
 			| /* nothing */;
 
 else_clause	: "else" ':'		{backpatch(mem.lastFalse,quadNext);				mem.lastFalse=emptylist();}
-				stmt_list		{mem.endif=merge(mem.endif,makelist(quadNext));	genquad("jump",o_,o_,oSTAR);	mem.endif=merge(mem.endif,$4.NEXT);}
+				stmt_list		{mem.endif=merge(mem.endif,makelist(quadNext));	genquad(O_JUMP,o_,o_,oSTAR);	mem.endif=merge(mem.endif,$4.NEXT);}
 			| /* nothing */
 
 /* ------------- */
@@ -475,7 +489,7 @@ simple		: "skip"
 								 if(!equalType($1.type,$3.type))	
 									 sserror("type mismatch in assigment: left expr is %s while right is %s",typeToStr($1.type),typeToStr($3.type));
 								 if($3.cond) $3.place = evaluateCondition($3.TRUE,$3.FALSE);
-								 genquad(":=",$3.place,o_,$1.place);
+								 genquad(O_ASSIGN,$3.place,o_,$1.place);
 								}  
 			| call				
 			;
@@ -500,11 +514,11 @@ call		: T_id '('			{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 								 c_generateQuads(c_getQuads());
 								 if(!equalType(s->u.eFunction.resultType,typeVoid)){
 									 SymbolEntry * w = newTemporary(s->u.eFunction.resultType);
-									 genquad("par",oRET,oS(w),o_);
+									 genquad(O_PAR,oRET,oS(w),o_);
 									 $$.place= oS(w);
 									 }
 								 else $$.place=NULL;
-								 genquad("call",o_,o_,oU(s->id)); 
+								 genquad(O_CALL,o_,o_,oU(s->id)); 
 								 $$.type=s->u.eFunction.resultType;
 								 c_pop();
 								}
@@ -513,11 +527,11 @@ call		: T_id '('			{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 								 if(s->u.eFunction.firstArgument!=NULL) sserror("function %s expects more arguments",s->id);
 								 if(!equalType(s->u.eFunction.resultType,typeVoid)){
 									 SymbolEntry * w = newTemporary(s->u.eFunction.resultType);
-									 genquad("par",oRET,oS(w),o_);
+									 genquad(O_PAR,oRET,oS(w),o_);
 									 $$.place= oS(w);
 									 }
 								 else $$.place=NULL;
-								 genquad("call",o_,o_,oU(s->id)); 
+								 genquad(O_CALL,o_,o_,oU(s->id)); 
 								 $$.type=s->u.eFunction.resultType;
 								}	
 			
@@ -597,7 +611,7 @@ atom		: T_id				{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 								 if(!equalType($3.type,typeInteger)) sserror("expression in brackets must be integer");
 								 $$.type=($1.type)->refType;
 								 SymbolEntry * w = newTemporary(typePointer($1.type));
-								 genquad("array",$1.place,$3.place,oS(w));
+								 genquad(O_ARRAY,$1.place,$3.place,oS(w));
 								 $$.place=oD(w);
 								 $$.lval=$1.lval;
 								}
@@ -627,42 +641,42 @@ rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeI
 			| '-' expr			{if(!equalType($2.type,typeInteger)) sserror("operator works only on int operands");
 								 $$.type=typeInteger; 
 								 SymbolEntry * w = newTemporary(typeInteger);
-								 genquad("-",oS(newConstant("0",typeInteger,0)),$2.place,oS(w));
+								 genquad(O_SUB,oS(newConstant("0",typeInteger,0)),$2.place,oS(w));
 								 $$.place=oS(w);
 								 $$.cond=false;
 								}	
 			| expr '+' expr		{if(!equalType($1.type,typeInteger) || !equalType($3.type,typeInteger)) sserror("operator work only on int operands");
 								 $$.type=typeInteger; 
 								 SymbolEntry * w = newTemporary(typeInteger);
-								 genquad("+",$1.place,$3.place,oS(w));
+								 genquad(O_ADD,$1.place,$3.place,oS(w));
 								 $$.place=oS(w);
 								 $$.cond=false;
 								}	
 			| expr '-' expr		{if(!equalType($1.type,typeInteger) || !equalType($3.type,typeInteger)) sserror("operator works only on int operands");
 								 $$.type=typeInteger; 
 								 SymbolEntry * w = newTemporary(typeInteger);
-								 genquad("-",$1.place,$3.place,oS(w));
+								 genquad(O_SUB,$1.place,$3.place,oS(w));
 								 $$.place=oS(w);
 								 $$.cond=false;
 								}	
 			| expr '*' expr		{if(!equalType($1.type,typeInteger) || !equalType($3.type,typeInteger)) sserror("operator works only on int operands");
 								 $$.type=typeInteger; 
 								 SymbolEntry * w = newTemporary(typeInteger);
-								 genquad("*",$1.place,$3.place,oS(w));
+								 genquad(O_MULT,$1.place,$3.place,oS(w));
 								 $$.place=oS(w);
 								 $$.cond=false;
 								}	
 			| expr '/' expr		{if(!equalType($1.type,typeInteger) || !equalType($3.type,typeInteger)) sserror("operator works only on int operands");
 								 $$.type=typeInteger; 
 								 SymbolEntry * w = newTemporary(typeInteger);
-								 genquad("/",$1.place,$3.place,oS(w));
+								 genquad(O_DIV,$1.place,$3.place,oS(w));
 								 $$.place=oS(w); 
 								 $$.cond=false;
 								}	
 			| expr "mod" expr	{if(!equalType($1.type,typeInteger) || !equalType($3.type,typeInteger)) sserror("operator works only on int operands");
 								 $$.type=typeInteger; 
 								 SymbolEntry * w = newTemporary(typeInteger);
-								 genquad("-",$1.place,$3.place,oS(w));
+								 genquad(O_MOD,$1.place,$3.place,oS(w));
 								 $$.place=oS(w);
 								 $$.cond=false;
 								}
@@ -676,9 +690,9 @@ rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeI
 								 if($1.cond)	$1.place = evaluateCondition($1.TRUE,$1.FALSE);
 								 if($3.cond)	$3.place = evaluateCondition($3.TRUE,$3.FALSE);
 								 $$.TRUE=makelist(quadNext);
-								 genquad("=",$1.place,$3.place,oSTAR);
+								 genquad(O_EQ,$1.place,$3.place,oSTAR);
 								 $$.FALSE=makelist(quadNext);
-								 genquad("jump",o_,o_,oSTAR);
+								 genquad(O_JUMP,o_,o_,oSTAR);
 								}
 			| expr "<>" expr	{if(!equalType($1.type,$3.type)) 
 									sserror("type mismatch between operands: arg1 '%s' and arg2 '%s'",typeToStr($1.type),typeToStr($3.type));
@@ -689,9 +703,9 @@ rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeI
 								 if($1.cond)	$1.place = evaluateCondition($1.TRUE,$1.FALSE);
 								 if($3.cond)	$3.place = evaluateCondition($3.TRUE,$3.FALSE);
 								 $$.TRUE=makelist(quadNext);
-								 genquad("<>",$1.place,$3.place,oSTAR);
+								 genquad(O_NE,$1.place,$3.place,oSTAR);
 								 $$.FALSE=makelist(quadNext);
-								 genquad("jump",o_,o_,oSTAR);
+								 genquad(O_JUMP,o_,o_,oSTAR);
 								}
 			| expr '<' expr		{if(!equalType($1.type,$3.type)) 
 									sserror("type mismatch between operands: arg1 '%s' and arg2 '%s'",typeToStr($1.type),typeToStr($3.type));
@@ -702,9 +716,9 @@ rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeI
 								 if($1.cond)	$1.place = evaluateCondition($1.TRUE,$1.FALSE);
 								 if($3.cond)	$3.place = evaluateCondition($3.TRUE,$3.FALSE);
 								 $$.TRUE=makelist(quadNext);
-								 genquad("<",$1.place,$3.place,oSTAR);
+								 genquad(O_LT,$1.place,$3.place,oSTAR);
 								 $$.FALSE=makelist(quadNext);
-								 genquad("jump",o_,o_,oSTAR);
+								 genquad(O_JUMP,o_,o_,oSTAR);
 								}
 			| expr '>' expr		{if(!equalType($1.type,$3.type)) 
 									sserror("type mismatch between operands: arg1 '%s' and arg2 '%s'",typeToStr($1.type),typeToStr($3.type));
@@ -715,9 +729,9 @@ rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeI
 								 if($1.cond)	$1.place = evaluateCondition($1.TRUE,$1.FALSE);
 								 if($3.cond)	$3.place = evaluateCondition($3.TRUE,$3.FALSE);
 								 $$.TRUE=makelist(quadNext);
-								 genquad(">",$1.place,$3.place,oSTAR);
+								 genquad(O_GT,$1.place,$3.place,oSTAR);
 								 $$.FALSE=makelist(quadNext);
-								 genquad("jump",o_,o_,oSTAR);
+								 genquad(O_JUMP,o_,o_,oSTAR);
 								}
 			| expr "<=" expr	{if(!equalType($1.type,$3.type)) 
 									sserror("type mismatch between operands: arg1 '%s' and arg2 '%s'",typeToStr($1.type),typeToStr($3.type));
@@ -728,9 +742,9 @@ rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeI
 								 if($1.cond)	$1.place = evaluateCondition($1.TRUE,$1.FALSE);
 								 if($3.cond)	$3.place = evaluateCondition($3.TRUE,$3.FALSE);
 								 $$.TRUE=makelist(quadNext);
-								 genquad("<=",$1.place,$3.place,oSTAR);
+								 genquad(O_LE,$1.place,$3.place,oSTAR);
 								 $$.FALSE=makelist(quadNext);
-								 genquad("jump",o_,o_,oSTAR);
+								 genquad(O_JUMP,o_,o_,oSTAR);
 								}	
 			| expr ">=" expr	{if(!equalType($1.type,$3.type)) 
 									sserror("type mismatch between operands: arg1 '%s' and arg2 '%s'",typeToStr($1.type),typeToStr($3.type));
@@ -741,9 +755,9 @@ rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeI
 								 if($1.cond)	$1.place = evaluateCondition($1.TRUE,$1.FALSE);
 								 if($3.cond)	$3.place = evaluateCondition($3.TRUE,$3.FALSE);
 								 $$.TRUE=makelist(quadNext);
-								 genquad(">=",$1.place,$3.place,oSTAR);
+								 genquad(O_GE,$1.place,$3.place,oSTAR);
 								 $$.FALSE=makelist(quadNext);
-								 genquad("jump",o_,o_,oSTAR);
+								 genquad(O_JUMP,o_,o_,oSTAR);
 								}
 
 			| "not" expr		{if(!equalType($2.type,typeBoolean)) sserror("operator 'not' can be used only on boolean expression");
@@ -789,16 +803,16 @@ rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeI
 										 // if type is array of any or list of any then use newarrp
 										 if(equalType($2,typeIArray(typeAny)) || equalType($2,typeList(typeAny))){
 											Operand s = oS(newConstant(NULL,typeInteger,sizeOfType($2)/2));	//size of referenced type in words FIXME
-											genquad("*",$4.place,s,w);
-											genquad("par",oV,w,o_);
-											genquad("par",oRET,z,o_);
-											genquad("call",o_,o_,oU("newarrp"));
+											genquad(O_MULT,$4.place,s,w);
+											genquad(O_PAR,oV,w,o_);
+											genquad(O_PAR,oRET,z,o_);
+											genquad(O_CALL,o_,o_,oU("newarrp"));
 										 } else {
 											Operand s = oS(newConstant(NULL,typeInteger,sizeOfType($2)));	//size of referenced type in bytes
-											genquad("*",$4.place,s,w);
-											genquad("par",oV,w,o_);
-											genquad("par",oRET,z,o_);
-											genquad("call",o_,o_,oU("newarrv"));
+											genquad(O_MULT,$4.place,s,w);
+											genquad(O_PAR,oV,w,o_);
+											genquad(O_PAR,oRET,z,o_);
+											genquad(O_CALL,o_,o_,oU("newarrv"));
 										 }
 										 $$.place=z;
 										 $$.cond=false;
@@ -811,15 +825,15 @@ rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeI
 										 if($1.cond) $1.place = evaluateCondition($1.TRUE,$1.FALSE);
 										 Operand z = oS(newTemporary($$.type));
 										 if(equalType($1.type,typeIArray(typeAny)) || equalType($1.type,typeList(typeAny))){
-											 genquad("par",oV,$1.place,o_);
-											 genquad("par",oV,$3.place,o_);
-											 genquad("par",oRET,z,o_);
-											 genquad("call",o_,o_,oU("consp"));
+											 genquad(O_PAR,oV,$1.place,o_);
+											 genquad(O_PAR,oV,$3.place,o_);
+											 genquad(O_PAR,oRET,z,o_);
+											 genquad(O_CALL,o_,o_,oU("consp"));
 										 } else {
-											 genquad("par",oV,$1.place,o_);
-											 genquad("par",oV,$3.place,o_);
-											 genquad("par",oRET,z,o_);
-											 genquad("call",o_,o_,oU("consv"));
+											 genquad(O_PAR,oV,$1.place,o_);
+											 genquad(O_PAR,oV,$3.place,o_);
+											 genquad(O_PAR,oRET,z,o_);
+											 genquad(O_CALL,o_,o_,oU("consv"));
 										 }
 										 $$.place=z;
 										 $$.cond=false;
@@ -837,9 +851,9 @@ rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeI
 											sserror("expression in brackets must be some list type but is %s",typeToStr($3.type));
 										 $$.type=$3.type->refType;
 										 Operand z = oS(newTemporary($$.type));
-										 genquad("par",oV,$3.place,o_);
-										 genquad("par",oRET,z,o_);
-										 genquad("call",o_,o_,oU("head"));
+										 genquad(O_PAR,oV,$3.place,o_);
+										 genquad(O_PAR,oRET,z,o_);
+										 genquad(O_CALL,o_,o_,oU("head"));
 										 $$.place=z;
 										 $$.cond=false;
 										}
@@ -847,9 +861,9 @@ rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeI
 			| "tail" '(' expr ')'		{if(!equalType($3.type,typeList(typeAny))) sserror("expression in brackets must be some list type");
 										 $$.type=$3.type;
 										 Operand z = oS(newTemporary($$.type));
-										 genquad("par",oV,$3.place,o_);
-										 genquad("par",oRET,z,o_);
-										 genquad("call",o_,o_,oU("tail"));
+										 genquad(O_PAR,oV,$3.place,o_);
+										 genquad(O_PAR,oRET,z,o_);
+										 genquad(O_CALL,o_,o_,oU("tail"));
 										 $$.place=z;
 										 $$.cond=false;
 										}
@@ -871,13 +885,16 @@ rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeI
 %%
 
 extern FILE *	yyin;
-FILE *	iout;
+extern FILE *	iout;
+
+#ifdef INTERMEDIATE
 FILE *	fout;
+#else
+extern FILE * fout;
+#endif
 
 
 const char *	filename;
-
-
 
 
 /* For syntax errors: called implicitly by parser */
@@ -942,12 +959,18 @@ void parseArguments(int argc,char * argv[]){
 		fout = stdout;
 }
 
+void sigsegv_hndler(int signum)
+{
+	error("SIGSEV (Segmentation fault) caught. Printing and exiting...");
+	if(iout!=NULL) {printQuads();	fflush(iout);	fclose(iout);}
+	if(fout!=NULL) {printFinal();	fflush(fout);	fclose(fout);}
+	fatal("SIGSEV: exited");
+}
 
 int main(int argc, char * argv[]){
 
-	fout = stdout;
-	//skeletonBegin();
-	//skeletonEnd();
+	/* Install Singal Handler */
+	signal(SIGSEGV, sigsegv_hndler);
 
 	/* Arguments parsing */
 	parseArguments(argc,argv);
