@@ -23,6 +23,15 @@
 #include "symbol.h"
 #include "error.h"
 
+#define STRINGS_MAX 128
+
+#define PRINTABLE_ASCII(CHAR) ((CHAR)>31 ? true : false)
+
+/* ----------------------------------------------------------- 
+   ---------------- used from lexer -------------------------   */
+/* ----------------------------------------------------------- */
+int		fixChar			(char *, int * shift);	
+
 
 /* -------------------------------------------------------------
    --------------- Internal Function Declaration ---------------
@@ -40,11 +49,18 @@ char *  label           (Operand o);
 
 void	printConditional(char * instr, Quad q);
 
-void	code			(char * command, char * a1, char * a2);					//print an assembly command 
-void	codel			(char * label, char * command, char * a1, char * a2);	//print labels in front
-void	codeq			(Quad q);												//print in commented format the original quad
+void	insertExtern	(char * func);
+void	printExtern		();
+
+char *	insertString	(SymbolEntry *s);
+void	printStrings	();
+
+void	code			(char * command, char * a1, char * a2);								//print an assembly command 
+void	codel			(char * label, char * command, char * a1, char * a2, bool colon);	//print labels in front
+void	codeq			(Quad q);															//print in commented format the original quad
 char *  str             (const char *s, ...);
 int		elementSize		(Operand o);
+bool	isLibFunc		(SymbolEntry * s);
 
 /* -------------------------------------------------------------
    ---------------------- Global variables ---------------------
@@ -52,6 +68,12 @@ int		elementSize		(Operand o);
 
 FILE * fout = NULL;
 int	fprintStart = 1;
+
+char *	extrn[LF_NUM];
+int		extrnNum = 0;
+
+char *	strings[STRINGS_MAX];
+int		stringsNum = 0;
 
 Operand currentUnit;	//the unit whose final code is generated, useful for jumps
 
@@ -69,7 +91,7 @@ void printFinal() /*FIXME: more cases remaining */
 		Operand y = q[i].y;
 		Operand z = q[i].z;
 		codeq(q[i]);
-		codel(label(oL(i)),NULL,NULL,NULL);
+		codel(label(oL(i)),NULL,NULL,NULL,true);
 		switch(q[i].op){
 			case O_ASSIGN:
 				load("bx",x);
@@ -142,7 +164,7 @@ void printFinal() /*FIXME: more cases remaining */
 				code("jmp",label(z),NULL);
 				break;
 			case O_UNIT: 
-				codel(name(x),"proc","near",NULL);
+				codel(name(x),"proc","near",NULL,false);
 				code("push","bp",NULL);
 				code("mov","bp","sp");
 				int localSize = - currentScope->negOffset;
@@ -151,32 +173,32 @@ void printFinal() /*FIXME: more cases remaining */
 				currentUnit = x;
 				break;
 			case O_ENDU:
-				codel(endof(x),"mov","sp","bp");
+				codel(endof(x),"mov","sp","bp",true);
 				code("pop","bp",NULL);
 				code("ret",NULL,NULL);
-				codel(name(x),"endp",NULL,NULL);
+				codel(name(x),"endp",NULL,NULL,false);
 				break;
 			case O_CALL:
-				{SymbolEntry * s = lookupEntry(z->name,LOOKUP_ALL_SCOPES,false);
-				if(s==NULL || s->entryType!=ENTRY_FUNCTION) internal("final: printFinal(): no function named %s in open scopes",z->name);
+				if(z->type!=OPERAND_UNIT) internal("final: printFinal(): operand z must be an OPERAND_UNIT Operand");
+				SymbolEntry * s = z->u.symbol;
 				if(equalType(s->u.eFunction.resultType,typeVoid))
 					code("sub","sp","2");
 				updateAL(s);
+				if(isLibFunc(s)) insertExtern(name(z));	//if the function is a library function  we must inlcude an extrn declaration at the end
 				code("call",str("near ptr %s",name(z)),NULL);
 				int paramSize = s->u.eFunction.posOffset;
 				code("add","sp",str("%d",paramSize+4));
-				}
 				break;
 			case O_RET:
 				code("jmp",endof(currentUnit),NULL);
 				break;
 			case O_PAR:/*FIXME: more cases here */
-				if(x==oV){
-					load("ax",y);
+				if(y==oV){
+					load("ax",x);
 					code("push","ax",NULL);
 				}
-				else if(x==oR || x==oRET){
-					loadAddr("si",y);
+				else if(y==oR || y==oRET){
+					loadAddr("si",x);
 					code("push","si",NULL);
 				}
 				break;
@@ -199,17 +221,20 @@ void printFinal() /*FIXME: more cases remaining */
 void skeletonBegin(char * progname){
 	fprintf(fout,
 			"xseg\tsegment\tpublic 'code'\n"
-			"\tassume\tcs:xseg, ds:xseg, ss:sxeg\n"
+			"\tassume\tcs:xseg, ds:xseg, ss:xseg\n"
 			"\torg\t100h\n"
 			"main\tproc\tnear\n"
 			"\tcall\tnear ptr %s\n"
 			"\tmov\tax, 4C00h\n"
-			"\tint\t21ha\n"
+			"\tint\t21h\n"
 			"main\tendp\n"
 			,name(oU(progname)));
 }
 
-void skeletonEnd(){
+void skeletonEnd() /*FIXME: add all external calls and strings */
+{
+	printExtern();
+	printStrings();
 	fprintf(fout,
 			"xseg\tends\n"
 			"\tend\tmain\n"
@@ -225,9 +250,10 @@ void code(char * command,char * a1, char * a2)
 	fprintf(fout,"\n");
 }
 
-void codel(char * label,char * command,char * a1, char * a2)
+void codel(char * label,char * command,char * a1, char * a2,bool colon)
 { 
-	if(label!=NULL)		fprintf(fout,"%s:",label);
+	if(label!=NULL)		fprintf(fout,"%s",label);
+	if(colon)			fprintf(fout,":");
 	code(command,a1,a2);
 }
 
@@ -258,7 +284,7 @@ void load(char * r, Operand o){
 
 				case ENTRY_VARIABLE:
 					offset = s->u.eVariable.offset;
-					if(sizeOfType(s->u.eVariable.type)==1) size="byte"; else size="word";
+					if(sizeOfType(s->u.eVariable.type)==1) size="word"; else size="word";
 					if(s->nestingLevel==currentScope->nestingLevel)						//local
 						code("mov",r,str("%s ptr [bp%d]",size,offset));	
 					else if(s->nestingLevel<currentScope->nestingLevel){				//non-local
@@ -332,9 +358,8 @@ void loadAddr(char * r,Operand o)
 			switch(s->entryType){
 
 				case ENTRY_CONSTANT:
-					internal("final: loadAddr: strings not supported yet");
-					if(equalType(s->u.eConstant.type,typeInteger))		code("mov",r,str("%d",s->u.eConstant.value.vInteger));
-					else												internal("final: loadAddr: unhandled case in constants");
+					if(equalType(s->u.eConstant.type,typeIArray(typeChar)))		{char * strLabel = insertString(s); if(strLabel==NULL) fatal("loadAddr string is null!"); code("lea",r,strLabel);}
+					else														internal("final: loadAddr: unhandled case in constants");
 					break;
 
 				case ENTRY_VARIABLE:
@@ -409,7 +434,7 @@ void store(char *r, Operand o)
 
 				case ENTRY_VARIABLE:
 					offset = s->u.eVariable.offset;
-					if(sizeOfType(s->u.eVariable.type)==1) size="byte"; else size="word";
+					if(sizeOfType(s->u.eVariable.type)==1) size="word"; else size="word";
 					if(s->nestingLevel==currentScope->nestingLevel)						//local
 						code("mov",str("%s ptr [bp%d]",size,offset),r);	
 					else if(s->nestingLevel<currentScope->nestingLevel){				//non-local
@@ -518,11 +543,12 @@ char * label(Operand o)
 char * name(Operand o)
 {
 	if(o->type!=OPERAND_UNIT) internal("final: name() must be called with an OPERAND_UNIT Operand");
-	const char * p = o->name;
-	int num  = o->u.unitNum; 
+	const char * p = o->name; 
 	char * buf = (char *) new((strlen(p)+LABEL_BUFFER_SIZE)*sizeof(char));
-	if(num>=0)	sprintf(buf,"_%s_%d",p,num);	//ordinary function	
-	else		sprintf(buf,"_%s",p);			//run-time Library Function
+	SymbolEntry * s = o->u.symbol;
+	int num	= s->u.eFunction.serialNum;
+	if(!isLibFunc(s))	sprintf(buf,"_%s_%d",p,num);	//ordinary function	
+	else				sprintf(buf,"_%s",p);			//run-time Library Function
 	return buf;
 }
 
@@ -530,10 +556,11 @@ char * endof(Operand o)
 {
 	if(o->type!=OPERAND_UNIT) internal("final: endof() must be called with an OPERAND_UNIT Operand");
 	const char * p = o->name;
-	int num  = o->u.unitNum; 
 	char * buf = (char *) new((strlen(p)+LABEL_BUFFER_SIZE)*sizeof(char));
-	if(num>=0)	sprintf(buf,"@%s_%d",p,num);	//ordinary function	
-	else		internal("final: endof called in a runtime library function");
+	SymbolEntry * s = o->u.symbol;
+	int num	= s->u.eFunction.serialNum;
+	if(!isLibFunc(s))	sprintf(buf,"@%s_%d",p,num);	//ordinary function	
+	else				internal("final: endof called in a runtime library function");
 	return buf;
 }
 
@@ -559,6 +586,99 @@ char * str(const char *s,...)
 	vsprintf(string,s,ap);
 	va_end(ap);
 	return string;
+}
+
+
+bool isLibFunc(SymbolEntry * s)
+{
+	if(s->entryType!=ENTRY_FUNCTION) internal("final: siLibFunc(): symbol is not of type ENTRY_FUNCTION");
+	return (s->u.eFunction.serialNum < 0 ? true : false);
+}
+
+bool isCallableFunc(SymbolEntry *s)
+{
+	if(s->entryType!=ENTRY_FUNCTION) internal("final: siLibFunc(): symbol is not of type ENTRY_FUNCTION");
+	return (s->u.eFunction.serialNum >= -LF_CALLABLE_NUM  ? true : false);
+}
+
+void insertExtern(char * func)
+{
+	int i;
+	for(i=0;i<extrnNum;i++)
+		if(strcmp(func,extrn[i])==0) return; //function already expressed wish to be declared
+	extrn[extrnNum++] = func;
+}
+
+void printExtern()	{ int i;   for(i=0;i<extrnNum;i++)	fprintf(fout,"\textrn\t%s : proc\n",extrn[i]); }
+
+
+
+#ifndef STRING_LABEL_SIZE
+#define STRING_LABEL_SIZE 8
+#endif
+
+char * fixString(char * str)
+{
+	int i,j,shift;
+	int length = strlen(str);
+	char * buf = (char *) new(length*sizeof(char));
+	i = j = 0; 
+	while(i<length){
+		buf[j++]=fixChar(str+i,&shift);
+		i+=shift;
+	}
+	buf[j]='\0';
+	return buf;
+}
+
+//support up to STRINGS_MAX strings (limmited to 999 by STRING_LABLE_SIZE)
+char * insertString(SymbolEntry * s)
+{
+#ifdef DEBUG
+	printf("entering insertString()\n");
+#endif
+	if(s->entryType!=ENTRY_CONSTANT || !equalType(s->u.eConstant.type,typeIArray(typeChar))) internal("final: insertString() not called with string");
+	if(stringsNum==STRINGS_MAX) fatal("Too many strings declared. Rcompile the compiler by increasing the definition of STRINGS_MAX");
+	char * str = fixString(strdup(s->u.eConstant.value.vString));
+	strings[stringsNum] = str;
+	char * buf = (char *) new(STRING_LABEL_SIZE*sizeof(char)) ;
+	sprintf(buf,"@str%d",stringsNum);
+	stringsNum++;
+#ifdef DEBUG
+	printf("exiting insertString() with stringNum: %d\n",stringsNum);
+#endif
+	return buf;
+}
+
+void printStrings()
+{
+	#ifdef DEBUG
+	printf("printStrings starting\n");
+	#endif
+
+	int i,j;
+	for(i=0;i<stringsNum;i++){
+		fprintf(fout,"@str%d",i);
+		char * buf = strings[i];
+		if(buf==NULL) fatal("printStrings(): attempted to print a null string");
+		int buflen = strlen(buf);
+		bool printableSeq = false;
+		/* Note: starting from j=1 and finishing at strlen-1 in order to ommit start and end quotes "str" */
+		for(j=1;j<buflen-1;j++){
+			if(PRINTABLE_ASCII(buf[j])){
+				if(!printableSeq) fprintf(fout,"\tdb\t'"); //this is the first printable char of a printalbe sequence to be printed in new db line
+				printableSeq = true;
+				fprintf(fout,"%c",buf[j]);
+			}
+			else{ 
+				if(printableSeq) fprintf(fout,"'\n"); //close printable sequence
+				fprintf(fout,"\tdb\t%d\n",buf[j]);
+				printableSeq = false;
+			}
+		}
+		if(printableSeq) fprintf(fout,"'\n"); //close printable sequence
+		fprintf(fout,"\tdb\t0\n");
+	}
 }
 
 //return the size of the element of an array (array is given as an Operand)

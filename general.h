@@ -39,12 +39,10 @@ void   delete (void *);
 extern int linecount;
 extern const char * filename;
 
-#ifndef LF_PARAM_NUM_MAX
-	#define LF_PARAM_NUM_MAX 2
-#endif
-#ifndef LF_FUNC_NUM
-	    #define LF_FUNC_NUM 15
-#endif
+#define LF_PARAM_NUM_MAX 2
+#define LF_INTERNAL_NUM 6
+#define LF_CALLABLE_NUM 15
+#define LF_NUM (LF_INTERNAL_NUM + LF_CALLABLE_NUM)
 
 
 

@@ -139,9 +139,13 @@ void c_generateQuads(c_quad * quads)
 #ifndef LF_PARAM_NUM_MAX
 	#define LF_PARAM_NUM_MAX 2
 #endif
-#ifndef LF_FUNC_NUM
-	#define LF_FUNC_NUM 15
+#ifndef LF_INTERNAL_FUNC_NUM
+	#define LF_INTERNAL_NUM 6
 #endif
+#ifndef LF_CALLABLE_FUNC_NUM
+	#define LF_CALLABLE_NUM 15
+#endif
+
 
 
 typedef struct LibFuncParam_tag {
@@ -183,31 +187,45 @@ void declareLF(LibFunc lf)
 
 void declareAllLibFunc()
 {
-	// here we declare all the run-time library functions
-	LibFunc libraryFunctions [LF_FUNC_NUM] = {
-		{ "puti",	typeVoid,		1, { {"n", typeInteger,			PASS_BY_VALUE}, } },
-		{ "putb",	typeVoid,		1, { {"b", typeBoolean,			PASS_BY_VALUE}, } },
-		{ "putc",	typeVoid,		1, { {"c", typeChar,			PASS_BY_VALUE}, } },
-		{ "puts",	typeVoid,		1, { {"s", typeIArray(typeChar),PASS_BY_VALUE}, } },
-		{ "geti",	typeInteger,	0, NULL											  },
-		{ "getb",	typeBoolean,	0, NULL 										  },
-		{ "getc",	typeChar,		0, NULL 										  },
-		{ "gets",	typeVoid,		2, { {"n", typeInteger,			PASS_BY_VALUE}, 
-										 {"s", typeIArray(typeChar),PASS_BY_VALUE}, } },
-		{ "abs",	typeInteger,	1, { {"n", typeInteger,			PASS_BY_VALUE}, } },
-		{ "ord",	typeInteger,	1, { {"c", typeChar,			PASS_BY_VALUE}, } },
-		{ "chr",	typeChar,		1, { {"n", typeInteger,			PASS_BY_VALUE}, } },
-		{ "strlen",	typeInteger,	1, { {"s", typeIArray(typeChar),PASS_BY_VALUE}, } },
-		{ "strcmp",	typeInteger,	2, { {"s1",typeIArray(typeChar),PASS_BY_VALUE},  
-										 {"s2",typeIArray(typeChar),PASS_BY_VALUE}, } },
-		{ "strcpy",	typeVoid,		2, { {"trg",typeIArray(typeChar),PASS_BY_VALUE}, 
-										 {"src",typeIArray(typeChar),PASS_BY_VALUE},} },
-		{ "strcat",	typeVoid,		2, { {"trg",typeIArray(typeChar),PASS_BY_VALUE}, 
-										 {"src",typeIArray(typeChar),PASS_BY_VALUE},} },
+	// here we declare all the run-time library functions, first the internal (canot be called by tony programmer and then the callable ones)
+	LibFunc libraryFunctions [LF_INTERNAL_NUM + LF_CALLABLE_NUM] = {
+		
+		/* Internal */
+		/* name		returnType			argNum	  for each arg: name, type, passMode		 */
+		{ "newarrp",typeIArray(typeAny),	1, { {"size", typeInteger,			PASS_BY_VALUE}, } },
+		{ "newarrv",typeIArray(typeAny),	1, { {"size", typeInteger,			PASS_BY_VALUE}, } },
+		{ "consp",	typeList(typeAny),		2, { {"head", typeInteger,			PASS_BY_VALUE}, 
+												 {"tail", typePointer(typeAny),	PASS_BY_VALUE}, } },
+		{ "consv",	typeList(typeAny),		2, { {"head", typeInteger,			PASS_BY_VALUE}, 
+												 {"tail", typePointer(typeAny),	PASS_BY_VALUE}, } },
+		{ "head",	typeAny,				1, { {"l",	  typeList(typeAny),	PASS_BY_VALUE}, } },
+		{ "tail",	typeList(typeAny),		1, { {"l",	  typeList(typeAny),	PASS_BY_VALUE}, } },
+
+		/* Callable */
+		/* name		returnType	argNum	  for each arg: name, type, passMode		 */
+		{ "puti",	typeVoid,		1, { {"n", typeInteger,				PASS_BY_VALUE},		} },
+		{ "putb",	typeVoid,		1, { {"b", typeBoolean,				PASS_BY_VALUE},		} },
+		{ "putc",	typeVoid,		1, { {"c", typeChar,				PASS_BY_VALUE},		} },
+		{ "puts",	typeVoid,		1, { {"s", typeIArray(typeChar),	PASS_BY_REFERENCE},	} },
+		{ "geti",	typeInteger,	0, NULL													  },
+		{ "getb",	typeBoolean,	0, NULL													  },
+		{ "getc",	typeChar,		0, NULL													  },
+		{ "gets",	typeVoid,		2, { {"n", typeInteger,				PASS_BY_VALUE}, 
+										 {"s", typeIArray(typeChar),	PASS_BY_REFERENCE},	} },
+		{ "abs",	typeInteger,	1, { {"n", typeInteger,				PASS_BY_VALUE},		} },
+		{ "ord",	typeInteger,	1, { {"c", typeChar,				PASS_BY_VALUE},		} },
+		{ "chr",	typeChar,		1, { {"n", typeInteger,				PASS_BY_VALUE},		} },
+		{ "strlen",	typeInteger,	1, { {"s", typeIArray(typeChar),	PASS_BY_REFERENCE},	} },
+		{ "strcmp",	typeInteger,	2, { {"s1",typeIArray(typeChar),	PASS_BY_REFERENCE},  
+										 {"s2",typeIArray(typeChar),	PASS_BY_REFERENCE},	} },
+		{ "strcpy",	typeVoid,		2, { {"trg",typeIArray(typeChar),	PASS_BY_REFERENCE}, 
+										 {"src",typeIArray(typeChar),	PASS_BY_REFERENCE},	} },
+		{ "strcat",	typeVoid,		2, { {"trg",typeIArray(typeChar),	PASS_BY_REFERENCE}, 
+										 {"src",typeIArray(typeChar),	PASS_BY_REFERENCE},	} },
 	};
 
 	int i;
-	for(i=0;i<LF_FUNC_NUM;i++)
+	for(i=0;i<LF_NUM;i++)
 		declareLF(libraryFunctions[i]);
 }
 
@@ -320,13 +338,12 @@ program		: {openScope(); declareAllLibFunc();} func_def { printQuads(); printFin
  *	BLOCK DEFINITION (FUNCTIONS)
  * -------------------------------------------------------------------------------------------------------------------------------- */ 
 
-func_def	: "def"	{mem.forward=0;} header ':'	
+func_def	: "def"	{mem.forward=0;} header ':'	{if(firstBlock) {skeletonBegin($3); firstBlock=!firstBlock;}} /* first func_def, main block */ 
 			  def_list							{genquad(O_UNIT,oU($3),o_,o_); }
 			  stmt_list 
-			  "end"								{backpatch($7.NEXT,quadNext); 
+			  "end"								{backpatch($8.NEXT,quadNext); 
 												 genquad(O_ENDU,oU($3),o_,o_);  
 												 printQuads(); //print quads
-												 if(firstBlock) {skeletonBegin($3); firstBlock=!firstBlock;} //first func_def, main block
 												 printFinal();
 												 #ifdef DEBUG
 												 printf("scope %s closes\n",$3);
@@ -370,10 +387,17 @@ formal		: "ref" type	{mem.ref=PASS_BY_REFERENCE; mem.type=$2;}	id_par_list
 
 			/* checks that T_id is uniquely defined in the current scope (not already in Symbol Table) */
 id_par_list : T_id {if(lookupEntry($1,LOOKUP_CURRENT_SCOPE,false)!=NULL) ssmerror("duplicate declaration of identifier in current scope"); 
-					newParameter($1,mem.type,mem.ref,mem.func);} 
+					//if parameter is array or list it must be passed by reference
+					if(equalType(mem.type,typeIArray(typeAny)) || equalType(mem.type,typeList(typeAny))) 
+						mem.ref = PASS_BY_REFERENCE;
+					newParameter($1,mem.type,mem.ref,mem.func);
+					} 
 			  id_par_full ;
 
 id_par_full : ',' T_id {if(lookupEntry($2,LOOKUP_CURRENT_SCOPE,false)!=NULL) ssmerror("duplicate declaration of identifier in current scope"); 
+						//if parameter is array or list it must be passed by reference
+						if(equalType(mem.type,typeIArray(typeAny)) || equalType(mem.type,typeList(typeAny))) 
+							mem.ref = PASS_BY_REFERENCE; 
 						 newParameter($2,mem.type,mem.ref,mem.func);} 
 			  id_par_full 
 			| /* nothing */ 
@@ -486,6 +510,7 @@ else_clause	: "else" ':'		{backpatch(mem.lastFalse,quadNext);				mem.lastFalse=e
 simple		: "skip"			
 								 /* atom is l-value && expr.type=atom.type */
 			| atom ":=" expr	{if(!$1.lval) sserror("expression in the left of asssigment is not an lvalue as it should be");
+								 if(getSymbol($1.place)->entryType==ENTRY_CONSTANT) sserror("strings are considered constants and cannot be changed");
 								 if(!equalType($1.type,$3.type))	
 									 sserror("type mismatch in assigment: left expr is %s while right is %s",typeToStr($1.type),typeToStr($3.type));
 								 if($3.cond) $3.place = evaluateCondition($3.TRUE,$3.FALSE);
@@ -514,7 +539,7 @@ call		: T_id '('			{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 								 c_generateQuads(c_getQuads());
 								 if(!equalType(s->u.eFunction.resultType,typeVoid)){
 									 SymbolEntry * w = newTemporary(s->u.eFunction.resultType);
-									 genquad(O_PAR,oRET,oS(w),o_);
+									 genquad(O_PAR,oS(w),oRET,o_);
 									 $$.place= oS(w);
 									 }
 								 else $$.place=NULL;
@@ -527,7 +552,7 @@ call		: T_id '('			{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 								 if(s->u.eFunction.firstArgument!=NULL) sserror("function %s expects more arguments",s->id);
 								 if(!equalType(s->u.eFunction.resultType,typeVoid)){
 									 SymbolEntry * w = newTemporary(s->u.eFunction.resultType);
-									 genquad(O_PAR,oRET,oS(w),o_);
+									 genquad(O_PAR,oS(w),oRET,o_);
 									 $$.place= oS(w);
 									 }
 								 else $$.place=NULL;
@@ -544,11 +569,11 @@ expr_list	: expr				{SymbolEntry * arg = c_getArg();
 											 typeToStr(arg->u.eParameter.type),typeToStr($1.type));
 								 if($1.cond) $1.place = evaluateCondition($1.TRUE,$1.FALSE);
 								 if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $1.lval==false)			
-									ssmerror("parameter pass is by reference but argument is not an l-value");
+									ssmerror("parameter pass is by reference but argument is not an l-value or a string");
 								 else if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $1.lval==true)
-									c_addQuad(oR,$1.place); 
+									c_addQuad($1.place,oR); 
 							 	 else if (arg->u.eParameter.mode==PASS_BY_VALUE)
-									c_addQuad(oV,$1.place);
+									c_addQuad($1.place,oV);
 								 else internal("unmatched parameter case");
 								 #ifdef DEBUG
 								 c_printQuads();
@@ -566,11 +591,11 @@ expr_full	:',' expr			{SymbolEntry * arg = c_getArg();
 											 typeToStr(arg->u.eParameter.type),typeToStr($2.type));
 								 if($2.cond) $2.place = evaluateCondition($2.TRUE,$2.FALSE);
 								 if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $2.lval==false)			
-									ssmerror("parameter pass is by reference but argument is not an l-value");
+									ssmerror("parameter pass is by reference but argument is not an l-value or a string");
 								 else if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $2.lval==true)
-									c_addQuad(oR,$2.place);
+									c_addQuad($2.place,oR);
 							 	 else if (arg->u.eParameter.mode==PASS_BY_VALUE) 
-									c_addQuad(oV,$2.place);
+									c_addQuad($2.place,oV);
 								 else internal("unmatched parameter case");
 								 #ifdef DEBUG
 								 c_printQuads();
@@ -601,7 +626,11 @@ atom		: T_id				{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 			| T_string			{$$.type=typeIArray(typeChar); /*FIXME: maybe here we must use pure sized array*/
 								 SymbolEntry * s = newConstant($1,$$.type,$1);
 								 $$.place=oS(s);
-								 $$.lval=false;
+								 $$.lval=true; 
+								 /* Attention: 
+								  * Although we consider for strings: l-value to be true, strings cannot be in the left part of an assigment
+								  * We consider them to be lval, so that if they are used as function arguments, they will be ALLOWED to pass 
+								  * by reference. In assigment we perform an extra check to exclude strings from being assigned */
 								}
 			| call				{$$.type=$1.type;
 								 $$.place=$$.place;
@@ -628,7 +657,7 @@ atom		: T_id				{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 expr		: atom				{$$.type=$1.type;	$$.lval=$1.lval;$$.place=$1.place;	$$.cond=false;	}
 			| rval				{$$.type=$1.type;	$$.lval=false;	$$.place=$1.place;	$$.cond=$1.cond;}
 			
-rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeInteger,$1) );	}
+rval:		  T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeInteger,$1) );	}
 			| T_char_const		{$$.type=typeChar;		$$.place = oS( newConstant(NULL,typeChar,$1)    );	}		
 			| '(' expr ')'		{$$.type=$2.type;
 								 $$.cond=$2.cond;
@@ -804,14 +833,14 @@ rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeI
 										 if(equalType($2,typeIArray(typeAny)) || equalType($2,typeList(typeAny))){
 											Operand s = oS(newConstant(NULL,typeInteger,sizeOfType($2)/2));	//size of referenced type in words FIXME
 											genquad(O_MULT,$4.place,s,w);
-											genquad(O_PAR,oV,w,o_);
-											genquad(O_PAR,oRET,z,o_);
+											genquad(O_PAR,w,oV,o_);
+											genquad(O_PAR,z,oRET,o_);
 											genquad(O_CALL,o_,o_,oU("newarrp"));
 										 } else {
 											Operand s = oS(newConstant(NULL,typeInteger,sizeOfType($2)));	//size of referenced type in bytes
 											genquad(O_MULT,$4.place,s,w);
-											genquad(O_PAR,oV,w,o_);
-											genquad(O_PAR,oRET,z,o_);
+											genquad(O_PAR,w,oV,o_);
+											genquad(O_PAR,z,oRET,o_);
 											genquad(O_CALL,o_,o_,oU("newarrv"));
 										 }
 										 $$.place=z;
@@ -825,14 +854,14 @@ rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeI
 										 if($1.cond) $1.place = evaluateCondition($1.TRUE,$1.FALSE);
 										 Operand z = oS(newTemporary($$.type));
 										 if(equalType($1.type,typeIArray(typeAny)) || equalType($1.type,typeList(typeAny))){
-											 genquad(O_PAR,oV,$1.place,o_);
-											 genquad(O_PAR,oV,$3.place,o_);
-											 genquad(O_PAR,oRET,z,o_);
+											 genquad(O_PAR,$1.place,oV,o_);
+											 genquad(O_PAR,$3.place,oV,o_);
+											 genquad(O_PAR,z,oRET,o_);
 											 genquad(O_CALL,o_,o_,oU("consp"));
 										 } else {
-											 genquad(O_PAR,oV,$1.place,o_);
-											 genquad(O_PAR,oV,$3.place,o_);
-											 genquad(O_PAR,oRET,z,o_);
+											 genquad(O_PAR,$1.place,oV,o_);
+											 genquad(O_PAR,$3.place,oV,o_);
+											 genquad(O_PAR,z,oRET,o_);
 											 genquad(O_CALL,o_,o_,oU("consv"));
 										 }
 										 $$.place=z;
@@ -851,8 +880,8 @@ rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeI
 											sserror("expression in brackets must be some list type but is %s",typeToStr($3.type));
 										 $$.type=$3.type->refType;
 										 Operand z = oS(newTemporary($$.type));
-										 genquad(O_PAR,oV,$3.place,o_);
-										 genquad(O_PAR,oRET,z,o_);
+										 genquad(O_PAR,$3.place,oV,o_);
+										 genquad(O_PAR,z,oRET,o_);
 										 genquad(O_CALL,o_,o_,oU("head"));
 										 $$.place=z;
 										 $$.cond=false;
@@ -861,8 +890,8 @@ rval:		 T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,typeI
 			| "tail" '(' expr ')'		{if(!equalType($3.type,typeList(typeAny))) sserror("expression in brackets must be some list type");
 										 $$.type=$3.type;
 										 Operand z = oS(newTemporary($$.type));
-										 genquad(O_PAR,oV,$3.place,o_);
-										 genquad(O_PAR,oRET,z,o_);
+										 genquad(O_PAR,$3.place,oV,o_);
+										 genquad(O_PAR,z,oRET,o_);
 										 genquad(O_CALL,o_,o_,oU("tail"));
 										 $$.place=z;
 										 $$.cond=false;
@@ -904,6 +933,19 @@ int yyerror(const char *msg){
 	exit(SYNTAX_ERRNUM);
 }
 
+//returns the char * s, without the part from the last dot to the end
+void removeExtension(char * s)
+{
+	int i=0;
+	while(s[i]!='\0') i++;
+	i--;
+	while(i>=0){
+		if(s[i]=='.')		{s[i]='\0';	break;}		//we found the last dot
+		else if(s[i]=='/')	break;					//in Linux we left the directory so the name is clean of extensions
+		else				i--;					//keep searching for the dot of the extension
+	}
+}
+
 void parseArguments(int argc,char * argv[]){
 
 	bool FFLAG = false; 
@@ -937,12 +979,12 @@ void parseArguments(int argc,char * argv[]){
 		if(yyin==NULL) fatal("filename %s is not valid. The file cannot be found.",filename);
 	}
 
-	/* FIXME: cleaning is not handled properly */
-	#define EXTENSION_SIZE 5
+	
+	#define EXTENSION_SIZE 6
 	unsigned int size = strlen(filename) + EXTENSION_SIZE; 
 	char fclean[size], buf[size];
 	strcpy(fclean,filename);
-	//fclean[strchr(fclean,'.')-fclean]='\0';
+	removeExtension(fclean);
 
 	/* Intermediate Code Filename Sepcification */ 
 	if(!IFLAG){
@@ -958,6 +1000,10 @@ void parseArguments(int argc,char * argv[]){
 	}else
 		fout = stdout;
 }
+
+
+
+
 
 void sigsegv_hndler(int signum)
 {

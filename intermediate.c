@@ -76,17 +76,20 @@ Operand oL(int quadLabel)
 	return o;
 }
 
+//called both on definition and on call of a function (block)
 Operand oU(const char * unitName)
 {
 	#ifdef DEBUG
-	printf("oU: %s\n",unitName);
+	//printf("oU: %s\n",unitName);
 	#endif
+	SymbolEntry * s = lookupEntry(unitName,LOOKUP_ALL_SCOPES,false);
+	if(s==NULL) internal("oU: function not declared in SymbolTable");
 	Operand o = (Operand ) new(sizeof(struct Operand_tag));
 	o->type = OPERAND_UNIT;
-	o->name = unitName;
-	o->u.unitNum = lookupEntry(unitName,LOOKUP_ALL_SCOPES,false)->u.eFunction.serialNum;
+	o->name = s->id;
+	o->u.symbol = s;
 	#ifdef DEBUG
-	printf("oU: %s finished\n",unitName);
+	//printf("oU: %s finished\n",unitName);
 	#endif
 	return o;
 }
@@ -240,6 +243,8 @@ void printList(List *l){
 }
 
 
+SymbolEntry * getSymbol(Operand o) 
+{ if(o->type!=OPERAND_SYMBOL) internal("getSymbol must be called with and OPERAND_SYMBOL Operand"); else return o->u.symbol;}
 
 //operator to string - alternatively we can allocate an const char * array with those values
 const char * otos(OperatorType op)

@@ -70,7 +70,6 @@ struct Operand_tag{
 	union{
 		SymbolEntry *	symbol;
 		int				quadLabel;
-		int				unitNum;
 	}u;
 
 };
@@ -140,7 +139,9 @@ void	printQuads	(void);
 ListPair	createCondition		(Operand place);
 Operand		evaluateCondition	(List * TRUE, List * FALSE);
 
-const char * otos (OperatorType op);
+SymbolEntry *	getSymbol		(Operand o);
+const char *	otos			(OperatorType op);
+
 void	test();
 
 #endif

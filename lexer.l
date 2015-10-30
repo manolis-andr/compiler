@@ -6,6 +6,7 @@
 #include "intermediate.h"
 #include "parser.h"
 #include "error.h"
+#include "general.h"
 
 #define T_eof	0
 
@@ -13,10 +14,9 @@ int  linecount=1;
 char lastWhitespace=' ';
 int  nesting;
 
-void omitQuotes(char * string);
-int	 fixEscapeChar();
-int  fixHex();
-int  charToInt(char );
+int		fixChar		(char * str, int * shift);
+int		fixHex		(char * str);
+int		charToInt	(char );
 
 %}
 
@@ -62,12 +62,9 @@ ESCAPE \\(n|t|r|0|\\|\'|\"|x{HEX}{HEX})
 
 {D}+				{ yylval.val=atoi(yytext); return T_int_const; }
 
-\"([^\n\"\'\\]|{ESCAPE})*\" { char buf[strlen(yytext)]; strcpy(buf,yytext); /*omitQuotes(buf);*/ yylval.name=strdup(buf); return T_string; }
+\"([^\n\"\'\\]|{ESCAPE})*\" { yylval.name = strdup(yytext); return T_string; }
 
-\'([^\"\'\\]|{ESCAPE})\'	{ if(yytext[1]=='\\')	yylval.val=fixEscapeChar();
-							  else					yylval.val=yytext[1];	
-							  return T_char_const; 
-							}
+\'([^\"\'\\]|{ESCAPE})\'	{ yylval.val=fixChar(yytext+1,NULL); return T_char_const; /*first of yytext is ' so it is not passed*/ } 
  
 [+|\-|*|/|#|=|<|>]	{ return yytext[0]; }
 "<="				{ return T_le;	}
@@ -95,20 +92,42 @@ ESCAPE \\(n|t|r|0|\\|\'|\"|x{HEX}{HEX})
 
 %%
 
-void omitQuotes(char * string)
-{
-	int i=0;
-	while(string[i+1]!='"'){
-		string[i]=string[i+1];
-		i++;
-	}
-	string[i]='\0';
-}
 
-int fixEscapeChar()
+/* It transposes string so that special chars are fixed
+ * Does not ommit quotes 
+ */
+/*char * fixString(char * str)
 {
-	//indicator is the char after the backshlash
-	switch(yytext[2]){
+	int i,j,shift;
+	int length = strlen(str);
+	char * buf = (char *) new(length*sizeof(char));
+	i = j = 0;
+	while(i<length){
+		buf[j++]=fixChar(str+i,&shift);
+		i+=shift;
+	}
+	buf[j]='\0';
+	return buf;
+}*/
+
+/* Function: if char represented in str is an escape char it returns the ascii value 
+ * 2nd argument is used to pass an integer (actually its address) that will 
+ * return the number of elements that were inspected for fixing
+ * 2nd argument can be NULL
+ * e.g. if str=[\,x,a,2] -> shift=4 and if str=[a] -> shift=1
+*/
+int fixChar(char * str, int *shift)
+{
+	//if shift==NULL to avoid NULL pointer exception we use a dummy pointer
+	int dummy;
+	if(shift==NULL) shift=&dummy;
+		
+	*shift=1;
+	if(str[0]!='\\') return str[0];	//regular character, not escape
+
+	*shift=2;
+	//indicator str[1] is the char after the backshlash of escape char
+	switch(str[1]){
 		case 'n': return '\n';
 		case 't': return '\t';
 		case 'r': return '\r';
@@ -116,17 +135,16 @@ int fixEscapeChar()
 		case '\\': return '\\';
 		case '\'': return '\'';
 		case '\"': return '\'';
-		case 'x': return fixHex();
+		case 'x': {*shift=4;  return fixHex(str+2); }
 		default : internal("lexer: escape char, unmatched case");
 	}
 }
 
-int fixHex()
+int fixHex(char * str)
 {
 	int d1,d2,hex;
-	d1=charToInt(yytext[3]);
-	if(yytext[4]=='\'') {d2=d1; d1=0;}
-	else				d2=charToInt(yytext[4]);
+	d1=charToInt(str[0]);
+	d2=charToInt(str[1]);
 	hex = d1*16 + d2;
 	return hex;
 }

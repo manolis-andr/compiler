@@ -323,6 +323,26 @@ SymbolEntry * newConstant (const char * name, Type type, ...)
 			return e;
     }
 
+	#ifdef DEBUG
+	printf("newConstant: ");
+	if(e==NULL) {printf("is null\n"); return NULL;}
+	printType(type);
+	switch (type->kind) {
+		case TYPE_INTEGER:
+			printf("%d",value.vInteger);
+			break;
+		case TYPE_BOOLEAN:
+			printf("%d",value.vBoolean);
+			break;
+		case TYPE_CHAR:
+			printf("%c",value.vChar);
+			break;
+		case TYPE_IARRAY:
+			printf("%s",value.vString);
+	}
+	printf(" --\n");
+	#endif
+	
     if (e != NULL) {
         e->entryType = ENTRY_CONSTANT;
         e->u.eConstant.type = type;
@@ -338,6 +358,7 @@ SymbolEntry * newConstant (const char * name, Type type, ...)
                 e->u.eConstant.value.vChar = value.vChar;
                 break;
             case TYPE_ARRAY:
+			case TYPE_IARRAY:
                 e->u.eConstant.value.vString = value.vString;
         }
     }
@@ -450,7 +471,7 @@ void forwardFunction (SymbolEntry * f)
 
 void endFunctionHeader (SymbolEntry * f, Type type)
 {
-	static int maxSerialNum = - LF_FUNC_NUM;
+	static int maxSerialNum = - LF_NUM;
 
     if (f->entryType != ENTRY_FUNCTION)
         internal("Cannot end parameters in a non-function");
@@ -754,9 +775,6 @@ const char * typeToStr (Type type)
     }
 	return "undefined";
 }
-
-
-
 
 void printMode (PassMode mode)
 {

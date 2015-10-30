@@ -87,7 +87,7 @@ extern int yydebug;
 typedef union YYSTYPE YYSTYPE;
 union YYSTYPE
 {
-#line 217 "parser.y" /* yacc.c:1909  */
+#line 235 "parser.y" /* yacc.c:1909  */
 
 	Type type;
 	const char * name;
