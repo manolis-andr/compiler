@@ -22,6 +22,9 @@
 #include "symbol.h"
 #include "error.h"
 
+#define ISACTIVE(NUM) ((NUM)<0 ? false : true)
+
+
 /* -------------------------------------------------------------
    ---------------------- Global variables ---------------------
    ------------------------------------------------------------- */
@@ -55,6 +58,28 @@ const Operand oRESULT =	&(operandConst[5]);
 /* -------------------------------------------------------------
    ------------------------- Functions -------------------------
    ------------------------------------------------------------- */
+
+
+void genquad(OperatorType op,Operand x,Operand y,Operand z)
+{
+	q[quadNext].num= quadNext;
+	q[quadNext].op = op;
+	q[quadNext].x  = x;
+	q[quadNext].y  = y;
+	q[quadNext].z  = z;
+	quadNext++;
+	if(quadNext==QUAD_ARRAY_SIZE) internal("Maximum quad limit reached. Recompile with a greater QUAD_ARRAY_SIZE\n");
+}
+
+
+void printQuads()
+{
+	int i;
+	for(i=qprintStart;i<quadNext;i++)
+		if(ISACTIVE(q[i].num)) fprintf(iout,"%d: %s, %s, %s, %s\n",q[i].num,otos(q[i].op),q[i].x->name,q[i].y->name,q[i].z->name);
+	qprintStart=quadNext;
+}
+
 
 Operand oS(SymbolEntry * s)
 {
@@ -118,26 +143,6 @@ Operand oA(SymbolEntry * s)
 	return o;
 }
 
-void genquad(OperatorType op,Operand x,Operand y,Operand z)
-{
-	q[quadNext].num= quadNext;
-	q[quadNext].op = op;
-	q[quadNext].x  = x;
-	q[quadNext].y  = y;
-	q[quadNext].z  = z;
-	quadNext++;
-	if(quadNext==QUAD_ARRAY_SIZE) internal("Maximum quad limit reached. Recompile with a greater QUAD_ARRAY_SIZE\n");
-}
-
-
-void printQuads()
-{
-	int i;
-	for(i=qprintStart;i<quadNext;i++)
-		fprintf(iout,"%d: %s, %s, %s, %s\n",q[i].num,otos(q[i].op),q[i].x->name,q[i].y->name,q[i].z->name);
-	qprintStart=quadNext;
-}
-
 
 ListPair createCondition(Operand place)
 {	
@@ -172,19 +177,110 @@ Operand evaluateCondition(List * TRUE, List * FALSE)
 	return oS(w);
 }
 
-/* Optimizations 
- 	1. constant expr evaluation
-	2. algebra transformations
-	3. boolean algebra transformations
-	4. inverse propagation
-	5. ?
-*/
-void optimize(){
+/* -------------------------------------------------------------
+   ----------------------- Optimizations -----------------------
+   ------------------------------------------------------------- */
 
+/* Optimizations 
+	1. inverse copy propagation
+ 	2. constant propagation 
+	3. algebraic transformations
+	4. boolean transformations
+*/
+
+void opt_inverseCopyPropagation()
+{
+	int i;
+	//up to quadNext-1 because the quads that will be transformed always go in pairs
+	for(i=qprintStart;i<quadNext-1;i++){
+		if(!ISACTIVE(q[i].num)) continue;
+		OperatorType op1 = q[i].op;
+		OperatorType op2 = q[i+1].op;
+		if( (op1==O_ADD || op1==O_SUB || op1==O_MULT || op1==O_DIV || op1==O_MOD) && op2==O_ASSIGN ){
+			if(getSymbol(q[i].z)==getSymbol(q[i+1].x)) {
+				q[i].z = q[i+1].z;
+				q[i+1].num = -1; //remove quad, deactivate
+				#ifdef DEBUG
+				printf("opt: inverseCopyPropagation: quad %d modified, quad %d removed\n",i,i+1);
+				#endif
+			}
+		}
+	}
 }
 
+void opt_constantFolding()
+{
+	int i;
+	for(i=qprintStart;i<quadNext;i++){
+		if(!ISACTIVE(q[i].num)) continue;
+		OperatorType op = q[i].op;
+		if( (op==O_ADD || op==O_SUB || op==O_MULT || op==O_DIV || op==O_MOD) && 
+			(getSymbol(q[i].x)->entryType==ENTRY_CONSTANT && getSymbol(q[i].y)->entryType==ENTRY_CONSTANT))
+		{
+			int v1 = getSymbol(q[i].x)->u.eConstant.value.vInteger;
+			int v2 = getSymbol(q[i].y)->u.eConstant.value.vInteger;
+			int res;
+			switch(op){
+				case O_ADD: res=v1+v2; break;
+				case O_SUB:	res=v1-v2; break;
+				case O_MULT: res=v1*v2; break;
+				case O_DIV: res=v1/v2; break;
+				case O_MOD: res=v1%v2; break;
+			}
+			q[i].op = O_ASSIGN;
+			q[i].x = oS(newConstant(NULL,typeInteger,res));
+			q[i].y = o_;
+		}
+	}
+}
+
+void opt_algebraicTransformations()
+{
+	int i;
+	SymbolEntry * s;
+	for(i=qprintStart;i<quadNext;i++){
+		if(!ISACTIVE(q[i].num)) continue;
+		if(q[i].op==O_ADD){
+			// 0 + x = x
+			s = getSymbol(q[i].x);
+			if(s->entryType==ENTRY_CONSTANT && s->u.eConstant.value.vInteger==0)
+				{ q[i].op=O_ASSIGN;	q[i].x=q[i].y;	q[i].y=o_; continue;	}
+			// x + 0 = x
+			s = getSymbol(q[i].y);
+			if(s->entryType==ENTRY_CONSTANT && s->u.eConstant.value.vInteger==0)
+				{ q[i].op=O_ASSIGN;	q[i].y=o_;					continue;	}
+		}
+		else if(q[i].op==O_MULT){
+			// 0 * x = 0
+			s = getSymbol(q[i].x);
+			if(s->entryType==ENTRY_CONSTANT && s->u.eConstant.value.vInteger==0)
+				{ q[i].op=O_ASSIGN;	q[i].y=o_;					continue;	}
+			// 1 * x = x
+			if(s->entryType==ENTRY_CONSTANT && s->u.eConstant.value.vInteger==1)
+				{ q[i].op=O_ASSIGN;	q[i].x=q[i].y;	q[i].y=o_;	continue;	}
+			s = getSymbol(q[i].y);
+			// x * 0 = 0
+			if(s->entryType==ENTRY_CONSTANT && s->u.eConstant.value.vInteger==0)
+				{ q[i].op=O_ASSIGN;	q[i].x=q[i].y;	q[i].y=o_;	continue;	}
+			// x * 1 = x
+			if(s->entryType==ENTRY_CONSTANT && s->u.eConstant.value.vInteger==1)
+				{ q[i].op=O_ASSIGN;	q[i].y=o_;					continue;	}
+		}
+	}
+}
+
+
+void optimize()
+{	
+	opt_inverseCopyPropagation(); //first, if constantFolding first, it will not work
+	opt_constantFolding();
+	opt_algebraicTransformations();
+	//opt_booleanTransformations();
+}
+
+
 /* -------------------------------------------------------------
-   -------------------- Helper List Functions ------------------
+   ---------------------- List Functions ----------------------
    ------------------------------------------------------------- */
 
 List* emptylist()
@@ -232,6 +328,7 @@ void backpatch(List *l,int qnum)
 	l->head=NULL; //list has been emptied
 }
 
+#ifdef DEBUG
 void printList(List *l){
 	Node * p = l->head;
 	if(p==NULL) printf("<empty>");
@@ -241,7 +338,11 @@ void printList(List *l){
 	}
 	printf("\n");
 }
+#endif
 
+/* -------------------------------------------------------------
+   ------------------ Other Helper Functions -------------------
+   ------------------------------------------------------------- */
 
 SymbolEntry * getSymbol(Operand o) 
 { if(o->type!=OPERAND_SYMBOL) internal("getSymbol must be called with and OPERAND_SYMBOL Operand"); else return o->u.symbol;}
@@ -274,8 +375,3 @@ const char * otos(OperatorType op)
 	}
 }
 
-
-void  test()
-{
-
-}

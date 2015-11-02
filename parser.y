@@ -39,6 +39,7 @@ struct Memory{
 
 
 bool firstBlock = true;
+bool OFLAG		= false;
 
 /* ********************************************	*
  *					c_ MODULE					*
@@ -332,7 +333,7 @@ void declareAllLibFunc()
 
 %%
 
-program		: {openScope(); declareAllLibFunc();} func_def { printQuads(); printFinal(); skeletonEnd(); closeScope();}
+program		: {openScope(); declareAllLibFunc();} func_def { if(OFLAG) {optimize();} printQuads(); printFinal(); skeletonEnd(); closeScope();}
 
 /* -------------------------------------------------------------------------------------------------------------------------------- 
  *	BLOCK DEFINITION (FUNCTIONS)
@@ -342,8 +343,9 @@ func_def	: "def"	{mem.forward=0;} header ':'	{if(firstBlock) {skeletonBegin($3);
 			  def_list							{genquad(O_UNIT,oU($3),o_,o_); }
 			  stmt_list 
 			  "end"								{backpatch($8.NEXT,quadNext); 
-												 genquad(O_ENDU,oU($3),o_,o_);  
-												 printQuads(); //print quads
+												 genquad(O_ENDU,oU($3),o_,o_);
+												 if(OFLAG) optimize();
+												 printQuads(); 
 												 printFinal();
 												 #ifdef DEBUG
 												 printf("scope %s closes\n",$3);
@@ -946,11 +948,11 @@ void removeExtension(char * s)
 	}
 }
 
+
 void parseArguments(int argc,char * argv[]){
 
 	bool FFLAG = false; 
 	bool IFLAG = false;
-	bool OFLAG = false;
 
 	int i, fileArg=0;
 	for(i=1;i<argc;i++){

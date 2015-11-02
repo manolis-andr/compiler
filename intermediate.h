@@ -76,7 +76,7 @@ struct Operand_tag{
 
 
 typedef struct Quad_tag{
-	int				num;
+	int				num;	//the number of the quad, if it is negative the quad has been omited by the optimizer
 	OperatorType	op;
 	Operand			x;
 	Operand			y;
@@ -121,7 +121,11 @@ extern const Operand oRESULT;
    --------------- Πρωτότυπα των βοηθητικών συναρτήσεων ----------------
    --------------------------------------------------------------------- */
 
+void	printQuads	(void);
+void	optimize	(void);
+
 void	genquad		(OperatorType op,Operand x,Operand y,Operand z);
+
 List*	emptylist	(void);
 List*	makelist	(int qnum);
 List*	merge		(List * l1,List * l2);
@@ -133,15 +137,15 @@ Operand oU			(const char *unitName); /* creates unit operand */
 Operand oD			(SymbolEntry *);		/* creates dereference [x] operand */ 	
 Operand oA			(SymbolEntry *);		/* creates address {x} operand */ 		
 
-void	printList	(List * l);
-void	printQuads	(void);
-
 ListPair	createCondition		(Operand place);
 Operand		evaluateCondition	(List * TRUE, List * FALSE);
 
 SymbolEntry *	getSymbol		(Operand o);
-const char *	otos			(OperatorType op);
+const char *	otos			(OperatorType op);	/* returns the string representation of an OperatorType
+													 * caled in printing (pritQuads and printFinal) */
 
-void	test();
+#ifdef DEBUG
+void	printList	(List * l);
+#endif
 
 #endif

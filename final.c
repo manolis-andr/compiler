@@ -87,6 +87,7 @@ void printFinal() /*FIXME: more cases remaining */
 	int i;
 	for(i=fprintStart;i<quadNext;i++)
 	{
+		if(q[i].num<0) continue; //quad has been removed by optimizer
 		Operand x = q[i].x;
 		Operand y = q[i].y;
 		Operand z = q[i].z;
