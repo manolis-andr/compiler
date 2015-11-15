@@ -40,5 +40,9 @@ void warning  (const char * fmt, ...);
 void sserror  (const char * fmt, ...);
 void ssmerror (const char * fmt, ...);
 
+/* yyerror(): 
+ * called implicitly by parser:
+ * void yyerror  (const char * msg);
+ */
 
 #endif

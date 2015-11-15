@@ -18,24 +18,42 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
+
 #include "intermediate.h"
 #include "general.h"
 #include "symbol.h"
 #include "error.h"
 
-#define STRINGS_MAX 128
+
+/* ----------------------------------------------------------- 
+   ---------------- Constant definitions ---------------------  
+   ----------------------------------------------------------- */
+
+#define STRINGS_MAX				128		/* maximum number of string literals in a tony program */
+
+#define STRING_LABEL_BUF_SIZE	9		/* bytes needed to buffer a string label in a char array. Limits string literals to 9999. */
+#define LABEL_BUF_SIZE			6		/* bytes needed to buffer a quad or a function label in a char array. Limits to 9999 quads & 999 functions */
+#define STR_BUF_SIZE			20		/* bytes allocated for the return buffer of str function */
+
+/* Number of string literals in a tony program supported: min{STRINGS_MAX,10^(STRING_LABEL_SIZE-5)} */
+
+/* For buf sizes, add one to increase number supported by a factor of 10 */
 
 #define PRINTABLE_ASCII(CHAR) ((CHAR)>31 ? true : false)
+
 
 /* ----------------------------------------------------------- 
    ---------------- used from lexer -------------------------   */
 /* ----------------------------------------------------------- */
 int		fixChar			(char *, int * shift);	
 
-
 /* -------------------------------------------------------------
-   --------------- Internal Function Declaration ---------------
+   -------------- Internal Function Declaration ----------------
    ------------------------------------------------------------- */
+
+void	code			(char * command, char * a1, char * a2);								//print an assembly command 
+void	codel			(char * label, char * command, char * a1, char * a2, bool colon);	//print labels in front
+void	codeq			(Quad q);															//print in commented format the original quad
 
 void    load            (char * reg, Operand o);
 void    loadAddr        (char * reg, Operand o);
@@ -54,13 +72,11 @@ void	printExtern		();
 
 char *	insertString	(SymbolEntry *s);
 void	printStrings	();
+char *	fixString		(char * str);
 
-void	code			(char * command, char * a1, char * a2);								//print an assembly command 
-void	codel			(char * label, char * command, char * a1, char * a2, bool colon);	//print labels in front
-void	codeq			(Quad q);															//print in commented format the original quad
 char *  str             (const char *s, ...);
-int		elementSize		(Operand o);
-bool	isLibFunc		(SymbolEntry * s);
+int		typeSize		(Operand o);
+int		refTypeSize		(Operand o);
 
 /* -------------------------------------------------------------
    ---------------------- Global variables ---------------------
@@ -72,37 +88,44 @@ int	fprintStart = 1;
 char *	extrn[LF_NUM];
 int		extrnNum = 0;
 
-char *	strings[STRINGS_MAX];
+char *	strings[STRINGS_MAX];	/* FIXME: array could be converted to a Queue for felxibility */
 int		stringsNum = 0;
 
 Operand currentUnit;	//the unit whose final code is generated, useful for jumps
 
+
 /* -------------------------------------------------------------
-   ------------------------- Functions -------------------------
+   -------------------- Public Functions -----------------------
    ------------------------------------------------------------- */
 
 
-void printFinal() /*FIXME: more cases remaining */
+void printFinal() 
 {
 	int i;
 	for(i=fprintStart;i<quadNext;i++)
 	{
-		if(q[i].num<0) continue; //quad has been removed by optimizer
-		Operand x = q[i].x;
-		Operand y = q[i].y;
-		Operand z = q[i].z;
-		codeq(q[i]);
+		Quad qd = q[INDEX(i)];
+		if(qd.num<0) continue; //quad has been removed by optimizer
+		Operand x = qd.x;
+		Operand y = qd.y;
+		Operand z = qd.z;
+		codeq(qd);
 		codel(label(oL(i)),NULL,NULL,NULL,true);
-		switch(q[i].op){
+		switch(qd.op){
 			case O_ASSIGN:
-				load("bx",x);
-				store("bx",z);
+				if(typeSize(x)==1){
+					load("bl",x);
+					store("bl",z);
+				} else if(typeSize(x)==2){
+					load("bx",x);
+					store("bx",z);
+				} else internal("final: printFinal(): unhandled type size case");
 				break;
 			case O_ARRAY:
 				load("ax",y);
-				code("mov","cx",str("%d",elementSize(x)));
+				code("mov","cx",str("%d",refTypeSize(x)));
 				code("imul","cx",NULL);
-				loadAddr("cx",x);
+				load("cx",x);	//ATTENTION: we modified this. In theory it is loadAddress("cx",x)
 				code("add","ax","cx");
 				store("ax",z);
 				break;
@@ -139,22 +162,22 @@ void printFinal() /*FIXME: more cases remaining */
 				store("dx",z);
 				break;
 			case O_EQ:
-				printConditional("je",q[i]);	
+				printConditional("je",qd);	
 				break;
 			case O_NE:
-				printConditional("jne",q[i]);	
+				printConditional("jne",qd);	
 				break;
 			case O_LT:
-				printConditional("jl",q[i]);	
+				printConditional("jl",qd);	
 				break;
 			case O_GT:
-				printConditional("jg",q[i]);	
+				printConditional("jg",qd);	
 				break;
 			case O_LE:
-				printConditional("jle",q[i]);	
+				printConditional("jle",qd);	
 				break;
 			case O_GE:
-				printConditional("jge",q[i]);	
+				printConditional("jge",qd);	
 				break;
 			case O_IFB:
 				load("al",x);
@@ -193,10 +216,17 @@ void printFinal() /*FIXME: more cases remaining */
 			case O_RET:
 				code("jmp",endof(currentUnit),NULL);
 				break;
-			case O_PAR:/*FIXME: more cases here */
+			case O_PAR:
 				if(y==oV){
-					load("ax",x);
-					code("push","ax",NULL);
+					if(typeSize(x)==1) {
+						load("al",x);
+						code("sub","sp","1");
+						code("mov","si","sp");
+						code("mov","byte ptr [si]","al");
+					} else if(typeSize(x)==2){
+						load("ax",x);
+						code("push","ax",NULL);
+					} else internal("final: printFinal(): unhandled type size case");
 				}
 				else if(y==oR || y==oRET){
 					loadAddr("si",x);
@@ -210,14 +240,6 @@ void printFinal() /*FIXME: more cases remaining */
 	fprintStart=quadNext;
 }
 
-/*	1. Είναι καλή δομή ο πίνακας για αποθήκευση των τετράδων ή δεν βολεύει στην βελτιστοποίηση του ενδιάμεσου κώδικα; (αν πρέπει να αναδιατάσσω και να
-		διαγράφω/προσθέτω εντολές ο πίνακας δεν είναι το καλύτερο δυνατό).
-	2. Είναι δυνατόν να βελτιστοποιηθεί ο ενδιάμεσος κώδικας κατά δομικά μπλοκ (συναρτήσεις) ή πρέπει να γίνει εξ ολοκλήρου η διαδικασία, με όλο
-		τον ενδιάμεσο κώδικα διαθέσιμο; Αν είναι δυνατόν, τότε δεν χρειάζεται να αποθηκεύουμε κάπου αλλού τις τετράδες και θα καλούμε τον optimizer 
-		και τον final code generator ακριβώς πριν το closeScope().
-	3. Να ξεκαθαρίσω ποιά πρέπει να είναι η βλετιστοποίηση στον τελικό κώδικα γιατί αν δεν χρειάζεται καθόλου τότε μπορώ να τυπώνω κατευθείαν τις 
-		εντολές. Ειδάλλως θα πρέπει να φτιάξω struct και να τις αποθηκεύω πάλι σε ένα πίνακα/λίστα στην μνήμη, και αφού κάνω το optimize να τυπώνω.
-*/
 
 void skeletonBegin(char * progname){
 	fprintf(fout,
@@ -232,7 +254,7 @@ void skeletonBegin(char * progname){
 			,name(oU(progname)));
 }
 
-void skeletonEnd() /*FIXME: add all external calls and strings */
+void skeletonEnd() 
 {
 	printExtern();
 	printStrings();
@@ -241,6 +263,10 @@ void skeletonEnd() /*FIXME: add all external calls and strings */
 			"\tend\tmain\n"
 			);
 }
+
+
+/* Printing functions for assembly commands */
+/* -------------------------------------------------------- */
 
 
 void code(char * command,char * a1, char * a2)				
@@ -260,7 +286,10 @@ void codel(char * label,char * command,char * a1, char * a2,bool colon)
 
 void codeq(Quad q)	{ fprintf(fout,";;; %d: %s, %s, %s, %s\n",q.num,otos(q.op),q.x->name,q.y->name,q.z->name); }
 
-/* ------------------ Helper ----------------------- */
+
+/* -------------------------------------------------------------
+   -------------------- Helper Functions -----------------------
+   ------------------------------------------------------------- */
 
 
 void load(char * r, Operand o){
@@ -280,12 +309,14 @@ void load(char * r, Operand o){
 					else if(strcmp(o->name,"false")==0)					code("mov",r,"0");
 					else if(equalType(s->u.eConstant.type,typeChar))	code("mov",r,str("%d",s->u.eConstant.value.vChar));	
 					else if(strcmp(o->name,"nil")==0)					code("mov",r,"0");
+					else if(equalType(s->u.eConstant.type,
+									typeIArray(typeChar)))				loadAddr(r,o); //strings
 					else												internal("final: load: unhandled case in constants");
 					break;
 
 				case ENTRY_VARIABLE:
 					offset = s->u.eVariable.offset;
-					if(sizeOfType(s->u.eVariable.type)==1) size="word"; else size="word";
+					if(sizeOfType(s->u.eVariable.type)==1) size="byte"; else size="word";
 					if(s->nestingLevel==currentScope->nestingLevel)						//local
 						code("mov",r,str("%s ptr [bp%d]",size,offset));	
 					else if(s->nestingLevel<currentScope->nestingLevel){				//non-local
@@ -334,12 +365,12 @@ void load(char * r, Operand o){
 			break;
 		
 		case OPERAND_DEREFERENCE:
-			if(sizeOfType(o->u.symbol->u.eTemporary.type)==1) size="byte"; else size="word";
-			load("di",o);
+			if(typeSize(o)==1) size="byte"; else size="word";
+			load("di",oS(getSymbol(o)));
 			code("mov",r,str("%s ptr [di]",size));
 			break;
 		case OPERAND_ADDRESS:
-			loadAddr(r,o);
+			loadAddr(r,oS(getSymbol(o)));
 			break;
 		default:
 			internal("final: load: unhandled operand type (type=%d)",o->type);
@@ -359,7 +390,7 @@ void loadAddr(char * r,Operand o)
 			switch(s->entryType){
 
 				case ENTRY_CONSTANT:
-					if(equalType(s->u.eConstant.type,typeIArray(typeChar)))		{char * strLabel = insertString(s); if(strLabel==NULL) fatal("loadAddr string is null!"); code("lea",r,strLabel);}
+					if(equalType(s->u.eConstant.type,typeIArray(typeChar)))		{char * strLabel = insertString(s); if(strLabel==NULL) fatal("loadAddr string is null!"); code("lea",r,str("byte ptr %s",strLabel));}
 					else														internal("final: loadAddr: unhandled case in constants");
 					break;
 
@@ -414,12 +445,15 @@ void loadAddr(char * r,Operand o)
 			break;
 		
 		case OPERAND_DEREFERENCE:
-			load(r,o);
+			load(r,oS(getSymbol(o)));
 			break;
 
 		default:
 			internal("final: load: unhandled operand type (type=%d)",o->type);
 	}
+	#ifdef DEBUG
+	printf("%s out of loadAddr\n",getSymbol(o)->id);
+	#endif
 }
 
 void store(char *r, Operand o)
@@ -435,7 +469,7 @@ void store(char *r, Operand o)
 
 				case ENTRY_VARIABLE:
 					offset = s->u.eVariable.offset;
-					if(sizeOfType(s->u.eVariable.type)==1) size="word"; else size="word";
+					if(sizeOfType(s->u.eVariable.type)==1) size="byte"; else size="word";
 					if(s->nestingLevel==currentScope->nestingLevel)						//local
 						code("mov",str("%s ptr [bp%d]",size,offset),r);	
 					else if(s->nestingLevel<currentScope->nestingLevel){				//non-local
@@ -484,15 +518,15 @@ void store(char *r, Operand o)
 					internal("final: store: unhandled case for OPERAND_SYMBOL");
 			}
 			break;
-
 		case OPERAND_RESULT:
+			if(sizeOfType(s->u.eParameter.type)==1) size="byte"; else size="word";
 			code("mov","si","word ptr [bp+6]");
-			code("mov","word ptr [si]",r);
+			code("mov",str("%s ptr [si]",size),r);
 			break;
 
 		case OPERAND_DEREFERENCE:
-			if(sizeOfType(o->u.symbol->u.eTemporary.type)==1) size="byte"; else size="word";
-			load("di",o);
+			if(typeSize(o)==1) size="byte"; else size="word";
+			load("di",oS(getSymbol(o)));
 			code("mov",str("%s ptr [di]",size),r);
 			break;
 	
@@ -529,23 +563,21 @@ void updateAL(SymbolEntry * s)
 }
 
 
-//support up to 9999 quads and 999 functions
-#ifndef LABEL_BUFFER_SIZE
-#define LABEL_BUFFER_SIZE 6
-#endif
+//support up to 10^(LABEL_BUF_SIZE-2) quads
 char * label(Operand o)
 {
 	if(o->type!=OPERAND_QLABEL) internal("final: label() should be called with an OPERAND_QLABEL Operand");
-	char * buf = (char *) new(LABEL_BUFFER_SIZE*sizeof(char));
+	char * buf = (char *) new(LABEL_BUF_SIZE*sizeof(char));
 	sprintf(buf,"@%d",o->u.quadLabel);
 	return buf;
 }
 
+//supports up to 10^(LABEL_BUF_SIZE-3) functions
 char * name(Operand o)
 {
 	if(o->type!=OPERAND_UNIT) internal("final: name() must be called with an OPERAND_UNIT Operand");
 	const char * p = o->name; 
-	char * buf = (char *) new((strlen(p)+LABEL_BUFFER_SIZE)*sizeof(char));
+	char * buf = (char *) new((strlen(p)+LABEL_BUF_SIZE)*sizeof(char));
 	SymbolEntry * s = o->u.symbol;
 	int num	= s->u.eFunction.serialNum;
 	if(!isLibFunc(s))	sprintf(buf,"_%s_%d",p,num);	//ordinary function	
@@ -553,11 +585,12 @@ char * name(Operand o)
 	return buf;
 }
 
+//supports up to 10^(LABEL_BUF_SIZE-3) functions
 char * endof(Operand o)
 {
 	if(o->type!=OPERAND_UNIT) internal("final: endof() must be called with an OPERAND_UNIT Operand");
 	const char * p = o->name;
-	char * buf = (char *) new((strlen(p)+LABEL_BUFFER_SIZE)*sizeof(char));
+	char * buf = (char *) new((strlen(p)+LABEL_BUF_SIZE)*sizeof(char));
 	SymbolEntry * s = o->u.symbol;
 	int num	= s->u.eFunction.serialNum;
 	if(!isLibFunc(s))	sprintf(buf,"@%s_%d",p,num);	//ordinary function	
@@ -567,40 +600,28 @@ char * endof(Operand o)
 
 
 void printConditional(char * instr,Quad q)
-{				
-	load("ax",q.x);
-	load("dx",q.y);
-	code("cmp","ax","dx");
-	if(q.z->type!=OPERAND_QLABEL) internal("final: printConditional(): Operand z must be of type OPERAND_QLABEL");
-	code(instr,label(q.z),NULL);
-}
-
-
-#ifndef STR_BUFFER_SIZE
-#define STR_BUFFER_SIZE	18
-#endif
-char * str(const char *s,...)
 {
-	va_list ap;
-	char * string = (char *) new(STR_BUFFER_SIZE*sizeof(char));
-	va_start(ap,s);
-	vsprintf(string,s,ap);
-	va_end(ap);
-	return string;
+	if(typeSize(q.x)==1){
+		load("al",q.x);
+		load("dl",q.y);
+		code("cmp","al","dl");
+		if(q.z->type!=OPERAND_QLABEL) internal("final: printConditional(): Operand z must be of type OPERAND_QLABEL");
+		code(instr,label(q.z),NULL);
+	}
+	else if(typeSize(q.x)==2){
+		load("ax",q.x);
+		load("dx",q.y);
+		code("cmp","ax","dx");
+		if(q.z->type!=OPERAND_QLABEL) internal("final: printConditional(): Operand z must be of type OPERAND_QLABEL");
+		code(instr,label(q.z),NULL);
+	}
+	else 
+		internal("final: printConditional(): unhandled case for type size ");
 }
 
 
-bool isLibFunc(SymbolEntry * s)
-{
-	if(s->entryType!=ENTRY_FUNCTION) internal("final: siLibFunc(): symbol is not of type ENTRY_FUNCTION");
-	return (s->u.eFunction.serialNum < 0 ? true : false);
-}
-
-bool isCallableFunc(SymbolEntry *s)
-{
-	if(s->entryType!=ENTRY_FUNCTION) internal("final: siLibFunc(): symbol is not of type ENTRY_FUNCTION");
-	return (s->u.eFunction.serialNum >= -LF_CALLABLE_NUM  ? true : false);
-}
+/* Functions for declaration of external library functions */
+/* -------------------------------------------------------- */
 
 void insertExtern(char * func)
 {
@@ -614,9 +635,8 @@ void printExtern()	{ int i;   for(i=0;i<extrnNum;i++)	fprintf(fout,"\textrn\t%s 
 
 
 
-#ifndef STRING_LABEL_SIZE
-#define STRING_LABEL_SIZE 8
-#endif
+/* Functions for declaration of string literals */
+/* -------------------------------------------------------- */
 
 char * fixString(char * str)
 {
@@ -632,7 +652,7 @@ char * fixString(char * str)
 	return buf;
 }
 
-//support up to STRINGS_MAX strings (limmited to 999 by STRING_LABLE_SIZE)
+//support up to STRINGS_MAX strings (limmited to 10^(STRING_LABLE_BUF_SIZE-4)
 char * insertString(SymbolEntry * s)
 {
 #ifdef DEBUG
@@ -642,11 +662,11 @@ char * insertString(SymbolEntry * s)
 	if(stringsNum==STRINGS_MAX) fatal("Too many strings declared. Rcompile the compiler by increasing the definition of STRINGS_MAX");
 	char * str = fixString(strdup(s->u.eConstant.value.vString));
 	strings[stringsNum] = str;
-	char * buf = (char *) new(STRING_LABEL_SIZE*sizeof(char)) ;
+	char * buf = (char *) new(STRING_LABEL_BUF_SIZE*sizeof(char));
 	sprintf(buf,"@str%d",stringsNum);
 	stringsNum++;
 #ifdef DEBUG
-	printf("exiting insertString() with stringNum: %d\n",stringsNum);
+	printf("exiting insertString() with stringNum %d and string: %s\n",stringsNum,buf);
 #endif
 	return buf;
 }
@@ -682,19 +702,49 @@ void printStrings()
 	}
 }
 
-//return the size of the element of an array (array is given as an Operand)
-int elementSize(Operand o)
+
+/* Minor Helper Functions */
+/* -------------------------------------------------------- */
+
+char * str(const char *s,...)
 {
-	if(o->type!=OPERAND_SYMBOL) internal("final: elementSize() operand in call must be an OPERAND_SYMBOL Operand"); 
+	va_list ap;
+	char * string = (char *) new(STR_BUF_SIZE*sizeof(char));
+	va_start(ap,s);
+	vsprintf(string,s,ap);
+	va_end(ap);
+	return string;
+}
+
+int typeSize(Operand o)
+{
+	if(o->type!=OPERAND_SYMBOL && o->type!=OPERAND_DEREFERENCE) internal("final: typeSize() operand in call must be an OPERAND_SYMBOL Operand"); 
+	SymbolEntry * s = o->u.symbol;
+	Type type;
+	switch(s->entryType){
+		case ENTRY_CONSTANT:	type = s->u.eConstant.type;		break;
+		case ENTRY_VARIABLE:	type = s->u.eVariable.type;		break;
+		case ENTRY_PARAMETER:	type = s->u.eParameter.type;	break;
+		case ENTRY_TEMPORARY:	type = s->u.eTemporary.type;	break;
+		default:				internal("final: typeSize(): unhandled case");
+	}
+	if(o->type==OPERAND_DEREFERENCE)	return sizeOfType(type->refType);
+	else if (o->type==OPERAND_SYMBOL)	return sizeOfType(type);
+}
+
+//return the size of the element of an array (array is given as an Operand)
+int refTypeSize(Operand o)
+{
+	if(o->type!=OPERAND_SYMBOL) internal("final: refTypeSize() operand in call must be an OPERAND_SYMBOL Operand"); 
 	SymbolEntry * s = o->u.symbol;
 	Type type;
 	switch(s->entryType){
 		case ENTRY_VARIABLE:	type = s->u.eVariable.type;		break;
 		case ENTRY_PARAMETER:	type = s->u.eParameter.type;	break;
 		case ENTRY_TEMPORARY:	type = s->u.eTemporary.type;	break;
-		default:				internal("final: elementSize(): unhandled case");
+		default:				internal("final: refTypetSize(): unhandled case");
 	}
-	if(!equalType(type,typeIArray(typeAny))) internal("final: elementSize() type of Operand is not an array");
+	if(!equalType(type,typeIArray(typeAny))) internal("final: refTypeSize() type of Operand is not an array");
 	return sizeOfType(type->refType);
 }
 

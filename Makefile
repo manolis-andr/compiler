@@ -1,7 +1,7 @@
-.PHONY: clean distclean
+.PHONY: clean 
 
 #User-defined flags, that must be given as a command line argument
-UFLAGS=
+FLAGS=
 
 CC=gcc
 CFLAGS= $(UFLAGS)
@@ -22,6 +22,11 @@ ifeq ($(INTERMEDIATE),0)
 	OBJS+= final.o
 endif
 
+# general dependencies
+DEPS= general.h error.h
+
+###### Rules ######
+
 compiler: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ -lfl
 
@@ -31,20 +36,32 @@ parser.c: parser.y
 lexer.c: lexer.l parser.h
 	flex -s -o $@ $<
 
-symbol.o: symbol.c error.o general.o
+lexer.o: lexer.c $(DEPS) symbol.h intermediate.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-intermediate.o: intermediate.c error.o general.o 
+parser.o: parser.c $(DEPS) symbol.h intermediate.h final.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-final.o: final.c error.o general.o
+intermediate.o: intermediate.c $(DEPS) symbol.h intermediate.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-%.o: %.c
+final.o: final.c $(DEPS) symbol.h intermediate.h final.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-clean: 
-	$(RM) lexer.c parser.c *.o *~
+%.o: %.c %.h $(DEPS)
+	$(CC) $(CFLAGS) -c -o $@ $<
 
-distclean:
-	$(RM) lexer.c parser.c parser.output *.o *.asm *.imm *~ compiler 
+
+### Header file dependencies (from includes)
+#1. error.o:	general.h error.h
+#2. general.o:	general.h error.h
+#4. lexer.o:	general.h error.h symbol.h intermediate.h
+#5. parser.o:	general.h error.h symbol.h intermediate.h final.h
+#6. symbol.o:	general.h error.h symbol.h
+#7. interme.o:	general.h error.h symbol.h intermediate.h
+#8. final.o:	general.h error.h symbol.h intermediate.h final.h
+
+
+clean:
+	$(RM) lexer.c parser.c parser.output *.o *~ compiler 
+

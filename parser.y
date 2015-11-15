@@ -14,6 +14,9 @@
 #include "general.h"
 #include "intermediate.h"
 
+#define SYMBOLTABLE_SIZE 3
+
+//if interest in intermediate code only, define in a dummy way all the public functions of final.c 
 #ifndef INTERMEDIATE
 	#include "final.h"
 #else
@@ -22,146 +25,226 @@
 	void skeletonEnd() {;}
 #endif
 
-/* Struct for remembering previous symbol table options, when we dig deeper into the symbols */
+
+/* -------------------------------------------------------------
+   -------------------------- Datatypes ------------------------
+   ------------------------------------------------------------- */
+
+/* Generic Stack and Queue datatypes		*/
+/* ---------------------------------------- */
+
+/* generic node used in Stack and Queue*/
+typedef struct genNode_tag {
+	void *					data;
+	struct genNode_tag *	next;
+} genNode;
+
+struct Stack_tag {
+	genNode *	top;
+	size_t		elementSize;
+};
+
+typedef struct Stack_tag * Stack;
+
+struct Queue_tag{
+	genNode *	first;
+	genNode *	last;
+	size_t		elementSize;
+}; 
+
+typedef struct Queue_tag * Queue;
+
+
+/* Generic Stack Functions */
+
+Stack newStack(size_t elementSize) 
+{	
+	Stack s = new(sizeof(struct Stack_tag));
+	s->top = NULL;
+	s->elementSize = elementSize;
+	return s;
+}
+
+void push(Stack stack)
+{
+	genNode * n = (genNode *) new(sizeof(genNode));
+	n->data = new(stack->elementSize);
+	n->next = stack->top;
+	stack->top = n;
+}
+
+void pop(Stack stack)
+{
+	if(stack->top==NULL) internal("attempt to pop from empty stack");
+	genNode * temp = stack->top;
+	stack->top = stack->top->next;
+	delete(temp->data);
+	delete(temp);
+}
+
+void * top(Stack stack)	
+{
+	if(stack->top==NULL) fatal("attempt to access empty stack"); 
+	return stack->top->data;
+}
+
+
+/* Generic Queue Functions */
+
+Queue newQueue(size_t elementSize) 
+{
+	Queue q = new(sizeof(struct Queue_tag));
+	q->first = q->last = NULL; 
+	q->elementSize = elementSize;
+	return q;
+}
+
+void addFirst(Queue queue)
+{
+	genNode * n = (genNode *) new(sizeof(genNode));
+	n->data = new(queue->elementSize);
+	if(queue->first==NULL){
+		n->next = NULL;
+		queue->last = n;
+	}else
+		n->next = queue->first;
+	queue->first = n;
+}
+
+void addLast(Queue queue)
+{
+	genNode * n = (genNode *) new(sizeof(genNode));
+	n->data = new(queue->elementSize);
+	n->next = NULL;
+	if(queue->last==NULL){
+		queue->first = n;
+	}else
+		queue->last->next = n;
+	queue->last = n;
+}
+
+void * getFirst(Queue q) 
+{ 
+	if(q->first==NULL) fatal("attempt to access empty queue");
+	return q->first->data;
+}
+
+void * getLast(Queue q) 
+{ 
+	if(q->last==NULL) fatal("attempt to access empty queue");
+	return q->last->data;
+}
+
+void * removeFirst(Queue q)
+{
+	if(q->first==NULL) fatal("attempt to access empty queue");
+	void * data = q->first->data;
+	genNode * temp = q->first;
+	q->first = q->first->next;
+	if(q->first==NULL) q->last=NULL; //queue empty
+	delete(temp);
+	return data;
+}
+
+bool isEmpty(Queue q) {return (q->first==NULL); }
+
+
+/* Helper datatypes (structs & functions) for temporary saving of values */
+/* --------------------------------------------------------------------- */
+
+/* Struct for remembering previous symbol settings, when we dig deeper into the symbols 
+ * ONLY for sequential symbol traversal (e.g. stmt), NOT for recursive traversal / nested symbols (e.g. if,for,call)
+ */
 struct Memory{
 	SymbolEntry *	func;
 	Type			type;
 	PassMode		ref;
 	int				forward;
-	SymbolEntry *	arg;
-	Operand			place;
-	int				loopLabel;
-	int				condLabel;
 	List *			lnext;
-	List *			lastFalse;
-	List *			endif;
-} mem;
+};
 
 
-bool firstBlock = true;
-bool OFLAG		= false;
+/* For reqursive traversal (nested symbols) we use Stacks.
+ * Symbols that can be nested: 
+ * - call (and parameters expressions) 
+ * - if_clause
+ * - for_clause
+ */
 
-/* ********************************************	*
- *					c_ MODULE					*
- * helper structs and functions for call symbol	*		
- * ********************************************	*/
+/* Helper Nodes to be used as data in generic datatypes Queue and Stack */ 
 
+typedef struct ifNode_tag {
+	List *	endif;
+	List *	lastFalse;
+} ifNode;
 
-//element of a queue with quads
-typedef struct c_quad{
-	Operand			passMode;
-	Operand			place;
-	struct c_quad * next;
-} c_quad;
+typedef struct forNode_tag {
+	int loopLabel;
+	int condLabel;
+} forNode;
 
-//element of a stack with functions
-typedef struct c_pair{
+typedef struct parNode_tag{
+	Operand					place;
+	Operand					passMode;
+} parNode;
+
+typedef struct callNode_tag {
 	SymbolEntry *	func;
 	SymbolEntry *	arg;
-	c_quad *		quads;
-	struct c_pair *	next;
-} c_pair;
+	Queue			params;
+} callNode;
 
-c_pair * c_stack = NULL;
-
-SymbolEntry * c_getFunc() {return c_stack->func;}
-SymbolEntry * c_getArg()  {return c_stack->arg;}
-c_quad *	  c_getQuads(){return c_stack->quads;}
-void c_setArg(SymbolEntry * arg) {c_stack->arg = arg;}
-void c_setQuads(c_quad * q)		 {c_stack->quads=q;}
-
-//push a new function into the stack
-void c_push(SymbolEntry * func, SymbolEntry * arg)
-{
-	c_pair * n = (c_pair *) new(sizeof(c_pair));
-	n->func = func;
-	n->arg	= arg;
-	n->quads= NULL;
-	n->next = c_stack;
-	c_stack = n;
-}
-
-//pop a function from the stack and delete its struct
-void c_pop()
-{
-	if(c_stack==NULL) internal("attempt to pop from empty stack");
-	c_pair * temp = c_stack;
-	c_stack = c_stack->next;
-	delete(temp);
-}
 
 #ifdef DEBUG
-void c_printQuads(){
-	c_quad * quads = c_getQuads();
-	printf("quads of %s: ",c_getFunc()->id);
-	if(quads==NULL) {printf("<empty>\n"); return;}
-	c_quad * p = quads;
+void printParQuads(callNode * n){
+	Queue params = n->params;
+	printf("par quads of %s: ",n->func->id);
+	if(isEmpty(params)) {printf("<empty>\n"); return;}
+	genNode * p = params->first;
 	while(p!=NULL) {
-		printf("(%s,%s), ",p->passMode->name,p->place->name);
+		parNode * pn = p->data; 
+		printf("(%s,%s), ",pn->place->name,pn->passMode->name);
+		fflush(stdout);
 		p=p->next;
 	}
 	printf("\n");
 }
 #endif
 
-//add a par quad at the end of the quads queue for the function at the top of the c_stack
-void c_addQuad(Operand passMode, Operand place)
-{
-	c_quad * n = (c_quad *) new(sizeof(c_quad));
-	n->passMode = passMode;
-	n->place	= place;
-	n->next		= NULL;
-	c_quad * queue = c_getQuads();
-	if(queue==NULL)
-		c_setQuads(n);
-	else {
-		c_quad * p = queue;
-		while(p->next!=NULL) p=p->next;
-		p->next=n;
-	}
-}
+/* -------------------------------------------------------------
+   ---------------------- Global Variables ---------------------
+   ------------------------------------------------------------- */
 
-//generate quads and deletes queue elements
-void c_generateQuads(c_quad * quads)
-{
-	if(quads==NULL) return;
-	c_quad * p = quads;
-	while(p!=NULL) {
-		genquad(O_PAR,p->passMode,p->place,o_);
-		c_quad * tmp = p;
-		p=p->next;
-		delete(tmp);
-	}
-}
+struct Memory mem;
 
-/* *********************** */
+Stack callStack;
+Stack ifStack;
+Stack forStack;
+
+bool firstBlock = true;
+bool OFLAG		= false;
 
 
-#ifndef LF_PARAM_NUM_MAX
-	#define LF_PARAM_NUM_MAX 2
-#endif
-#ifndef LF_INTERNAL_FUNC_NUM
-	#define LF_INTERNAL_NUM 6
-#endif
-#ifndef LF_CALLABLE_FUNC_NUM
-	#define LF_CALLABLE_NUM 15
-#endif
+/* -------------------------------------------------------------
+   ----------------- Library Function Declaration --------------
+   ------------------------------------------------------------- */
 
+/* For #definitions for library function declaration module parameters look at general.h */
 
-
+/* struct to represent a pramater of a library function */
 typedef struct LibFuncParam_tag {
 	char *		name;
 	Type		type;
 	PassMode	passMode;
 } LibFuncParam;
 
+/* struct to a library function */
 typedef struct LibFunc_tag{
 	char *			name;
 	Type			returnType;
 	int				paramNum;
 	LibFuncParam    paramList[LF_PARAM_NUM_MAX];
 } LibFunc;
-
 
 
 void declareLF(LibFunc lf)
@@ -188,8 +271,8 @@ void declareLF(LibFunc lf)
 
 void declareAllLibFunc()
 {
-	// here we declare all the run-time library functions, first the internal (canot be called by tony programmer and then the callable ones)
-	LibFunc libraryFunctions [LF_INTERNAL_NUM + LF_CALLABLE_NUM] = {
+	// here we declare all the run-time library functions, first the internal (canot be called explicitly by tony programmer) and then the callable
+	LibFunc libraryFunctions [LF_NUM] = {
 		
 		/* Internal */
 		/* name		returnType			argNum	  for each arg: name, type, passMode		 */
@@ -204,25 +287,25 @@ void declareAllLibFunc()
 
 		/* Callable */
 		/* name		returnType	argNum	  for each arg: name, type, passMode		 */
-		{ "puti",	typeVoid,		1, { {"n", typeInteger,				PASS_BY_VALUE},		} },
-		{ "putb",	typeVoid,		1, { {"b", typeBoolean,				PASS_BY_VALUE},		} },
-		{ "putc",	typeVoid,		1, { {"c", typeChar,				PASS_BY_VALUE},		} },
-		{ "puts",	typeVoid,		1, { {"s", typeIArray(typeChar),	PASS_BY_REFERENCE},	} },
-		{ "geti",	typeInteger,	0, NULL													  },
-		{ "getb",	typeBoolean,	0, NULL													  },
-		{ "getc",	typeChar,		0, NULL													  },
+		{ "puti",	typeVoid,		1, { {"n", typeInteger,				PASS_BY_VALUE},	} },
+		{ "putb",	typeVoid,		1, { {"b", typeBoolean,				PASS_BY_VALUE},	} },
+		{ "putc",	typeVoid,		1, { {"c", typeChar,				PASS_BY_VALUE},	} },
+		{ "puts",	typeVoid,		1, { {"s", typeIArray(typeChar),	PASS_BY_VALUE},	} },
+		{ "geti",	typeInteger,	0, NULL												  },
+		{ "getb",	typeBoolean,	0, NULL												  },
+		{ "getc",	typeChar,		0, NULL												  },
 		{ "gets",	typeVoid,		2, { {"n", typeInteger,				PASS_BY_VALUE}, 
-										 {"s", typeIArray(typeChar),	PASS_BY_REFERENCE},	} },
-		{ "abs",	typeInteger,	1, { {"n", typeInteger,				PASS_BY_VALUE},		} },
-		{ "ord",	typeInteger,	1, { {"c", typeChar,				PASS_BY_VALUE},		} },
-		{ "chr",	typeChar,		1, { {"n", typeInteger,				PASS_BY_VALUE},		} },
-		{ "strlen",	typeInteger,	1, { {"s", typeIArray(typeChar),	PASS_BY_REFERENCE},	} },
-		{ "strcmp",	typeInteger,	2, { {"s1",typeIArray(typeChar),	PASS_BY_REFERENCE},  
-										 {"s2",typeIArray(typeChar),	PASS_BY_REFERENCE},	} },
-		{ "strcpy",	typeVoid,		2, { {"trg",typeIArray(typeChar),	PASS_BY_REFERENCE}, 
-										 {"src",typeIArray(typeChar),	PASS_BY_REFERENCE},	} },
-		{ "strcat",	typeVoid,		2, { {"trg",typeIArray(typeChar),	PASS_BY_REFERENCE}, 
-										 {"src",typeIArray(typeChar),	PASS_BY_REFERENCE},	} },
+										 {"s", typeIArray(typeChar),	PASS_BY_VALUE},	} },
+		{ "abs",	typeInteger,	1, { {"n", typeInteger,				PASS_BY_VALUE},	} },
+		{ "ord",	typeInteger,	1, { {"c", typeChar,				PASS_BY_VALUE},	} },
+		{ "chr",	typeChar,		1, { {"n", typeInteger,				PASS_BY_VALUE},	} },
+		{ "strlen",	typeInteger,	1, { {"s", typeIArray(typeChar),	PASS_BY_VALUE},	} },
+		{ "strcmp",	typeInteger,	2, { {"s1",typeIArray(typeChar),	PASS_BY_VALUE},  
+										 {"s2",typeIArray(typeChar),	PASS_BY_VALUE},	} },
+		{ "strcpy",	typeVoid,		2, { {"trg",typeIArray(typeChar),	PASS_BY_VALUE}, 
+										 {"src",typeIArray(typeChar),	PASS_BY_VALUE},	} },
+		{ "strcat",	typeVoid,		2, { {"trg",typeIArray(typeChar),	PASS_BY_VALUE}, 
+										 {"src",typeIArray(typeChar),	PASS_BY_VALUE},	} },
 	};
 
 	int i;
@@ -230,8 +313,8 @@ void declareAllLibFunc()
 		declareLF(libraryFunctions[i]);
 }
 
-
 %}
+
 
 %union{
 	Type type;
@@ -298,7 +381,7 @@ void declareAllLibFunc()
 %token T_assign	":="
 
 %token<name> T_id
-%token<val> T_int_const	
+%token<val>	T_int_const	
 %token<val> T_char_const
 %token<name> T_string
 
@@ -318,7 +401,6 @@ void declareAllLibFunc()
 %type<atom> atom 
 
 %type<call> call
-
 
 
 
@@ -343,6 +425,7 @@ func_def	: "def"	{mem.forward=0;} header ':'	{if(firstBlock) {skeletonBegin($3);
 			  def_list							{genquad(O_UNIT,oU($3),o_,o_); }
 			  stmt_list 
 			  "end"								{backpatch($8.NEXT,quadNext); 
+												 //printf("before endu\n");
 												 genquad(O_ENDU,oU($3),o_,o_);
 												 if(OFLAG) optimize();
 												 printQuads(); 
@@ -389,17 +472,11 @@ formal		: "ref" type	{mem.ref=PASS_BY_REFERENCE; mem.type=$2;}	id_par_list
 
 			/* checks that T_id is uniquely defined in the current scope (not already in Symbol Table) */
 id_par_list : T_id {if(lookupEntry($1,LOOKUP_CURRENT_SCOPE,false)!=NULL) ssmerror("duplicate declaration of identifier in current scope"); 
-					//if parameter is array or list it must be passed by reference
-					if(equalType(mem.type,typeIArray(typeAny)) || equalType(mem.type,typeList(typeAny))) 
-						mem.ref = PASS_BY_REFERENCE;
 					newParameter($1,mem.type,mem.ref,mem.func);
 					} 
 			  id_par_full ;
 
 id_par_full : ',' T_id {if(lookupEntry($2,LOOKUP_CURRENT_SCOPE,false)!=NULL) ssmerror("duplicate declaration of identifier in current scope"); 
-						//if parameter is array or list it must be passed by reference
-						if(equalType(mem.type,typeIArray(typeAny)) || equalType(mem.type,typeList(typeAny))) 
-							mem.ref = PASS_BY_REFERENCE; 
 						 newParameter($2,mem.type,mem.ref,mem.func);} 
 			  id_par_full 
 			| /* nothing */ 
@@ -468,13 +545,13 @@ stmt		: simple			{$$.NEXT=emptylist();}
 			;		
 
 
-for_clause	: "for" simple_list ';' {mem.condLabel=quadNext;}
+for_clause	: "for" simple_list ';' {push(forStack);				forNode * n=top(forStack);		n->condLabel=quadNext;}
 				expr ';'			{if(!equalType($5.type,typeBoolean)) sserror("second part of 'for' clause must be a boolean expression");
 									 if(!$5.cond) {ListPair l = createCondition($5.place); $5.TRUE=l.TRUE; $5.FALSE=l.FALSE;}
-									 mem.loopLabel=quadNext;}	
-				simple_list ':'		{genquad(O_JUMP,o_,o_,oL(mem.condLabel));	backpatch($5.TRUE,quadNext);}
-				stmt_list			{backpatch($11.NEXT,mem.loopLabel);			genquad(O_JUMP,o_,o_,oL(mem.loopLabel));}
-				"end"				{$$.NEXT=$5.FALSE;} 
+									 forNode *n=top(forStack);		n->loopLabel = quadNext;}	
+				simple_list ':'		{forNode *n=top(forStack);		genquad(O_JUMP,o_,o_,oL(n->condLabel));	backpatch($5.TRUE,quadNext);}
+				stmt_list			{forNode *n=top(forStack);		backpatch($11.NEXT,n->loopLabel);		genquad(O_JUMP,o_,o_,oL(n->loopLabel));}
+				"end"				{pop(forStack);					$$.NEXT=$5.FALSE;} 
 
 
 
@@ -483,25 +560,29 @@ for_clause	: "for" simple_list ';' {mem.condLabel=quadNext;}
 			/* the following form of grammar allows the desired precedence behaviour from if-clauses */
 if_clause	: "if" expr			{if(!equalType($2.type,typeBoolean)) sserror("condition of 'if' clause must be a boolean expression");
 								 if(!$2.cond) {ListPair l = createCondition($2.place); $2.TRUE=l.TRUE; $2.FALSE=l.FALSE;}
-								 backpatch($2.TRUE,quadNext);		mem.lastFalse=$2.FALSE;
+								 push(ifStack);						ifNode *n = top(ifStack);	
+								 backpatch($2.TRUE,quadNext);		n->lastFalse=$2.FALSE;		
 								} 
-				':' stmt_list	{mem.endif=makelist(quadNext);		genquad(O_JUMP,o_,o_,oSTAR);	mem.endif=merge(mem.endif,$5.NEXT);}
+				':' stmt_list	{ifNode *n = top(ifStack);			n->endif=makelist(quadNext);	
+								 genquad(O_JUMP,o_,o_,oSTAR);		n->endif=merge(n->endif,$5.NEXT);}
 				elsif_clause 
 				else_clause 
-				"end"			{$$.NEXT=merge(mem.endif,mem.lastFalse);}
+				"end"			{ifNode *n = top(ifStack);			$$.NEXT=merge(n->endif,n->lastFalse);	pop(ifStack);}
 			;
 
-elsif_clause: "elsif"			{backpatch(mem.lastFalse,quadNext);}
+elsif_clause: "elsif"			{ifNode *n = top(ifStack);			backpatch(n->lastFalse,quadNext);}
 				expr			{if(!equalType($3.type,typeBoolean)) sserror("condition of 'if' clause must be a boolean expression");
 								 if(!$3.cond) {ListPair l = createCondition($3.place); $3.TRUE=l.TRUE; $3.FALSE=l.FALSE;}
-								 backpatch($3.TRUE,quadNext);					mem.lastFalse=$3.FALSE;
+								 ifNode *n = top(ifStack);			backpatch($3.TRUE,quadNext);			n->lastFalse=$3.FALSE;
 								}
-				':' stmt_list	{mem.endif=merge(mem.endif,makelist(quadNext));	genquad(O_JUMP,o_,o_,oSTAR);	mem.endif=merge(mem.endif,$6.NEXT);}
+				':' stmt_list	{ifNode *n = top(ifStack);			n->endif=merge(n->endif,makelist(quadNext));	
+								 genquad(O_JUMP,o_,o_,oSTAR);		n->endif=merge(n->endif,$6.NEXT);}
 				elsif_clause 
 			| /* nothing */;
 
-else_clause	: "else" ':'		{backpatch(mem.lastFalse,quadNext);				mem.lastFalse=emptylist();}
-				stmt_list		{mem.endif=merge(mem.endif,makelist(quadNext));	genquad(O_JUMP,o_,o_,oSTAR);	mem.endif=merge(mem.endif,$4.NEXT);}
+else_clause	: "else" ':'		{ifNode *n = top(ifStack);			backpatch(n->lastFalse,quadNext);			n->lastFalse=emptylist();}
+				stmt_list		{ifNode *n = top(ifStack);			n->endif=merge(n->endif,makelist(quadNext));	
+								 genquad(O_JUMP,o_,o_,oSTAR);		n->endif=merge(n->endif,$4.NEXT);}
 			| /* nothing */
 
 /* ------------- */
@@ -512,7 +593,6 @@ else_clause	: "else" ':'		{backpatch(mem.lastFalse,quadNext);				mem.lastFalse=e
 simple		: "skip"			
 								 /* atom is l-value && expr.type=atom.type */
 			| atom ":=" expr	{if(!$1.lval) sserror("expression in the left of asssigment is not an lvalue as it should be");
-								 if(getSymbol($1.place)->entryType==ENTRY_CONSTANT) sserror("strings are considered constants and cannot be changed");
 								 if(!equalType($1.type,$3.type))	
 									 sserror("type mismatch in assigment: left expr is %s while right is %s",typeToStr($1.type),typeToStr($3.type));
 								 if($3.cond) $3.place = evaluateCondition($3.TRUE,$3.FALSE);
@@ -535,19 +615,30 @@ simple_full	: ',' simple simple_full | /* nothing */
 			/* check that T_id is ENTRY_FUNCTION && check function call limitations */
 call		: T_id '('			{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
 								 if(s->entryType!=ENTRY_FUNCTION) ssmerror("identifier is not a function");
-								 c_push(s,s->u.eFunction.firstArgument);
+								 if(!isCallableFunc(s)) ssmerror("function is not callable"); //we assume that there are some non callable functions
+								 push(callStack);
+								 callNode * n = top(callStack);
+								 n->func = s;	
+								 n->arg= s->u.eFunction.firstArgument;
+								 n->params = newQueue(sizeof(parNode));
 								}	
-				expr_list ')'	{SymbolEntry *s = c_getFunc(); 
-								 c_generateQuads(c_getQuads());
+				expr_list ')'	{callNode * n = top(callStack);
+								 SymbolEntry *s = n->func;
+								 //generate par quads
+								 Queue params = n->params;
+								 while(!isEmpty(params)){
+									parNode * p = removeFirst(params);
+									genquad(O_PAR,p->place,p->passMode,o_);
+								 }
 								 if(!equalType(s->u.eFunction.resultType,typeVoid)){
 									 SymbolEntry * w = newTemporary(s->u.eFunction.resultType);
 									 genquad(O_PAR,oS(w),oRET,o_);
 									 $$.place= oS(w);
-									 }
+								 }
 								 else $$.place=NULL;
 								 genquad(O_CALL,o_,o_,oU(s->id)); 
 								 $$.type=s->u.eFunction.resultType;
-								 c_pop();
+								 pop(callStack);
 								}
 			| T_id '(' ')'		{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
 								 if(s->entryType!=ENTRY_FUNCTION)		sserror("identifier is not a function");
@@ -563,49 +654,67 @@ call		: T_id '('			{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 								}	
 			
 
-expr_list	: expr				{SymbolEntry * arg = c_getArg();
+expr_list	: expr				{callNode * n = top(callStack);
+								 SymbolEntry * arg = n->arg;
 								 if(arg==NULL)								
-									ssmerror("function %s expects less arguments",c_getFunc()->id);
+									ssmerror("function %s expects less arguments",n->func->id);
 								 if(!equalType($1.type,arg->u.eParameter.type))	
 									ssmerror("type mismatch in function arguments: expected %s but found %s\n",
 											 typeToStr(arg->u.eParameter.type),typeToStr($1.type));
 								 if($1.cond) $1.place = evaluateCondition($1.TRUE,$1.FALSE);
-								 if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $1.lval==false)			
-									ssmerror("parameter pass is by reference but argument is not an l-value or a string");
-								 else if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $1.lval==true)
-									c_addQuad($1.place,oR); 
-							 	 else if (arg->u.eParameter.mode==PASS_BY_VALUE)
-									c_addQuad($1.place,oV);
+								 if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $1.lval==false)
+									ssmerror("parameter pass is by reference but argument is not an l-value");
+								 else if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $1.lval==true){
+									addLast(n->params);
+									parNode * p = getLast(n->params);
+									p->place = $1.place;
+									p->passMode = oR;
+								 }
+							 	 else if (arg->u.eParameter.mode==PASS_BY_VALUE){
+									addLast(n->params);
+									parNode * p = getLast(n->params);
+									p->place = $1.place;
+									p->passMode = oV;
+								 }
 								 else internal("unmatched parameter case");
 								 #ifdef DEBUG
-								 c_printQuads();
+								 printParQuads(n);
 								 #endif
-								 c_setArg(arg->u.eParameter.next);
+								 n->arg = arg->u.eParameter.next;
 								}
 				expr_full
 			
 
-expr_full	:',' expr			{SymbolEntry * arg = c_getArg();
+expr_full	:',' expr			{callNode * n = top(callStack);
+								 SymbolEntry * arg = n->arg;
 								 if(arg==NULL)								
-									ssmerror("function %s expects less arguments",c_getFunc()->id);
+									ssmerror("function %s expects less arguments",n->func->id);
 								 if(!equalType($2.type,arg->u.eParameter.type))	
 									ssmerror("type mismatch in function arguments: expected %s but found %s\n",
 											 typeToStr(arg->u.eParameter.type),typeToStr($2.type));
 								 if($2.cond) $2.place = evaluateCondition($2.TRUE,$2.FALSE);
 								 if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $2.lval==false)			
-									ssmerror("parameter pass is by reference but argument is not an l-value or a string");
-								 else if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $2.lval==true)
-									c_addQuad($2.place,oR);
-							 	 else if (arg->u.eParameter.mode==PASS_BY_VALUE) 
-									c_addQuad($2.place,oV);
+									ssmerror("parameter pass is by reference but argument is not an l-value");
+								 else if(arg->u.eParameter.mode==PASS_BY_REFERENCE && $2.lval==true){
+									addLast(n->params);
+									parNode * p = getLast(n->params);
+									p->place = $2.place;
+									p->passMode = oR;
+								 }
+							 	 else if (arg->u.eParameter.mode==PASS_BY_VALUE){
+									addLast(n->params);
+									parNode * p = getLast(n->params);
+									p->place = $2.place;
+									p->passMode = oV;
+								 }
 								 else internal("unmatched parameter case");
 								 #ifdef DEBUG
-								 c_printQuads();
+								 printParQuads(n);
 								 #endif
-								 c_setArg(arg->u.eParameter.next);
+								 n->arg = arg->u.eParameter.next;
 								}
 				expr_full		
-			| /* nothing */		{if(c_getArg()!=NULL) sserror("function %s expects more arguments",c_getFunc());}
+			| /* nothing */		{callNode *n = top(callStack);	if(n->arg!=NULL) sserror("function %s expects more arguments",n->func);}
 
 
 
@@ -628,7 +737,7 @@ atom		: T_id				{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 			| T_string			{$$.type=typeIArray(typeChar); /*FIXME: maybe here we must use pure sized array*/
 								 SymbolEntry * s = newConstant($1,$$.type,$1);
 								 $$.place=oS(s);
-								 $$.lval=true; 
+								 $$.lval=false; 
 								 /* Attention: 
 								  * Although we consider for strings: l-value to be true, strings cannot be in the left part of an assigment
 								  * We consider them to be lval, so that if they are used as function arguments, they will be ALLOWED to pass 
@@ -641,7 +750,7 @@ atom		: T_id				{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 			| atom '[' expr ']' {if(!equalType($1.type,typeIArray(typeAny))) sserror("excessive brackets");
 								 if(!equalType($3.type,typeInteger)) sserror("expression in brackets must be integer");
 								 $$.type=($1.type)->refType;
-								 SymbolEntry * w = newTemporary(typePointer($1.type));
+								 SymbolEntry * w = newTemporary(typeIArray($$.type));
 								 genquad(O_ARRAY,$1.place,$3.place,oS(w));
 								 $$.place=oD(w);
 								 $$.lval=$1.lval;
@@ -870,12 +979,17 @@ rval:		  T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,type
 										 $$.cond=false;
 										}
 
-			/*FIXME: nil, nil? */
-
-			| "nil"						{$$.type=typeList(typeAny);		$$.place=oS(newConstant("nil",$$.type));}
+			| "nil"						{$$.type=typeList(typeAny);		$$.place=oS(newConstant("nil",$$.type));	$$.cond=false;}
 
 			| "nil?" '(' expr ')'		{if(!equalType($3.type,typeList(typeAny))) sserror("expression in brackets must be some list type");
+										 //printf("in nil?\n");
 										 $$.type=typeBoolean;
+										 $$.TRUE=makelist(quadNext);
+										 genquad(O_EQ,$3.place,oS(newConstant("nil",typeList(typeAny))),oSTAR);
+										 $$.FALSE=makelist(quadNext);
+										 genquad(O_JUMP,o_,o_,oSTAR);
+										 $$.cond=true;
+										 //printf("out of nil?\n");
 										 }
 
 			| "head" '(' expr ')'		{if(!equalType($3.type,typeList(typeAny))) 
@@ -915,27 +1029,23 @@ rval:		  T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,type
 
 %%
 
+/* Global filestream pointers */
+
 extern FILE *	yyin;
 extern FILE *	iout;
-
 #ifdef INTERMEDIATE
 FILE *	fout;
 #else
 extern FILE * fout;
 #endif
 
-
 const char *	filename;
 
 
-/* For syntax errors: called implicitly by parser */
-int yyerror(const char *msg){
-	fprintf(stderr, "%s:%d: ", filename, linecount);
-	fprintf(stderr,"syntax error: %s\n",msg);
-	exit(SYNTAX_ERRNUM);
-}
-
-//returns the char * s, without the part from the last dot to the end
+/* removeExtension():
+ * Returns the char * s, without the part from the last dot to the end 
+ * Called by parseArguments() 
+ */
 void removeExtension(char * s)
 {
 	int i=0;
@@ -982,8 +1092,9 @@ void parseArguments(int argc,char * argv[]){
 	}
 
 	
-	#define EXTENSION_SIZE 6
-	unsigned int size = strlen(filename) + EXTENSION_SIZE; 
+	#define FILE_EXTENSION_LENGTH 5 // max{".asm",".imm"}+1
+	unsigned int size = strlen(filename) + FILE_EXTENSION_LENGTH; 
+	#undef FILE_EXTENSION_LENGTH
 	char fclean[size], buf[size];
 	strcpy(fclean,filename);
 	removeExtension(fclean);
@@ -1004,9 +1115,7 @@ void parseArguments(int argc,char * argv[]){
 }
 
 
-
-
-
+#ifdef LINUX_SYS
 void sigsegv_hndler(int signum)
 {
 	error("SIGSEV (Segmentation fault) caught. Printing and exiting...");
@@ -1014,19 +1123,24 @@ void sigsegv_hndler(int signum)
 	if(fout!=NULL) {printFinal();	fflush(fout);	fclose(fout);}
 	fatal("SIGSEV: exited");
 }
+#endif
 
-int main(int argc, char * argv[]){
+int main(int argc, char * argv[])
+{
+	/* Initialize variables */
+	callStack = newStack(sizeof(callNode));
+	forStack  = newStack(sizeof(forNode));
+	ifStack   = newStack(sizeof(ifNode));
 
+	#ifdef LINUX_SYS
 	/* Install Singal Handler */
 	signal(SIGSEGV, sigsegv_hndler);
+	#endif
 
 	/* Arguments parsing */
 	parseArguments(argc,argv);
 
 	/* Initializing Symbol Table  */
-#ifndef SYMBOLTABLE_SIZE
-	#define SYMBOLTABLE_SIZE 257
-#endif
 	initSymbolTable(SYMBOLTABLE_SIZE);
 
 	/* Calling the syntax parser */

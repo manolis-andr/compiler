@@ -93,23 +93,6 @@ ESCAPE \\(n|t|r|0|\\|\'|\"|x{HEX}{HEX})
 %%
 
 
-/* It transposes string so that special chars are fixed
- * Does not ommit quotes 
- */
-/*char * fixString(char * str)
-{
-	int i,j,shift;
-	int length = strlen(str);
-	char * buf = (char *) new(length*sizeof(char));
-	i = j = 0;
-	while(i<length){
-		buf[j++]=fixChar(str+i,&shift);
-		i+=shift;
-	}
-	buf[j]='\0';
-	return buf;
-}*/
-
 /* Function: if char represented in str is an escape char it returns the ascii value 
  * 2nd argument is used to pass an integer (actually its address) that will 
  * return the number of elements that were inspected for fixing
@@ -162,26 +145,6 @@ int charToInt(char c)
 	return -1; //only on error
 }
 	
-
-
-/*void ERROR(const char msg[]){
-	fprintf(stderr,"ERROR: %s\n",msg);
-	exit(1);
-}*/
-
-
-/* Not needed any more
-int main(){
-	int token;
-	
-	do{
-		token = yylex(); 
-		printf("token=%d, lexeme=\"%s\"\n",token,yytext);
-	} while (token!=T_eof);
-
-	return 0;
-}*/
-
 
 
 

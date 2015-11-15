@@ -14,11 +14,19 @@
  *  Εργαστήριο Τεχνολογίας Λογισμικού
  */
 
-#include "symbol.h"
 
 #ifndef __INTERMEDIATE_H__
 #define __INTERMEDIATE_H__
 
+#include "symbol.h"
+
+#define QUAD_ARRAY_SIZE 129		//num of quads supported in a function + 1
+
+//finds the real index out quadNext, for the circular buffer of quads q[]
+#define INDEX(X) (X % QUAD_ARRAY_SIZE)
+
+//checks if after optimization a quad remains present (active) and has not been deleted
+#define ISACTIVE(NUM) ((NUM)<0 ? false : true)
 
 /* ---------------------------------------------------------------------
    --------------------------- Ορισμός τύπων ---------------------------

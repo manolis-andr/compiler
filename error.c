@@ -144,3 +144,13 @@ void ssmerror(const char * fmt, ...)
    va_end(ap);
    exit(SEMANTIC_ERRNUM);
 }
+
+
+/* For syntax errors: called implicitly by parser */
+int yyerror(const char *msg)
+{
+	fprintf(stderr, "%s:%d: ", filename, linecount);
+	fprintf(stderr,"syntax error: %s\n",msg);
+	exit(SYNTAX_ERRNUM);
+}
+

@@ -232,5 +232,8 @@ void          printType          (Type type);
 void          printMode          (PassMode mode);
 
 const char *  typeToStr			 (Type type);
+bool		  isLibFunc			 (SymbolEntry * s);
+bool		  isCallableFunc	 (SymbolEntry * s);
+Type		  getType			 (SymbolEntry * s);
 
 #endif

@@ -279,6 +279,10 @@ SymbolEntry * newConstant (const char * name, Type type, ...)
                 strcpy((char *) (value.vString), str);
                 break;
             }
+		case TYPE_LIST:
+			//only nil list can exist as a list constant, no need to parse va_list
+			if(strcmp(name,"nil")!=0) internal("newConstant(): invalid list constant");
+			break;
         default:
             internal("Invalid type for constant");
     }
@@ -339,6 +343,8 @@ SymbolEntry * newConstant (const char * name, Type type, ...)
 			break;
 		case TYPE_IARRAY:
 			printf("%s",value.vString);
+		case TYPE_LIST:
+			printf("nil");
 	}
 	printf(" --\n");
 	#endif
@@ -360,6 +366,9 @@ SymbolEntry * newConstant (const char * name, Type type, ...)
             case TYPE_ARRAY:
 			case TYPE_IARRAY:
                 e->u.eConstant.value.vString = value.vString;
+				break;
+			case TYPE_LIST:
+				break; //no need to provide a value, only nil constant existent for lists
         }
     }
     return e;
@@ -725,6 +734,7 @@ void printType (Type type)
 		case TYPE_POINTER:
 			printf("pointer to ");
 			printType(type->refType);
+			break;
 		case TYPE_LIST:
 			printf("list of ");
 			printType(type->refType);
@@ -734,6 +744,20 @@ void printType (Type type)
 			break;
     }
 }
+
+
+Type getType(SymbolEntry * s){
+	if(s==NULL) internal("getType(): SymbolEntry arg is NULL");
+	switch(s->entryType){
+		case ENTRY_CONSTANT:	return s->u.eConstant.type;
+		case ENTRY_VARIABLE:	return s->u.eVariable.type;
+		case ENTRY_PARAMETER:	return s->u.eParameter.type;
+		case ENTRY_TEMPORARY:	return s->u.eTemporary.type;
+		case ENTRY_FUNCTION:	internal("getType(): unsupported ENTRY_FUNCTION");
+		default:				internal("getType(): unhandled entry type");
+	}
+}
+
 
 const char * typeToStr (Type type)
 {
@@ -780,4 +804,18 @@ void printMode (PassMode mode)
 {
     if (mode == PASS_BY_REFERENCE)
         printf("var ");
+}
+
+
+bool isLibFunc(SymbolEntry * s)
+{
+	if(s->entryType!=ENTRY_FUNCTION) internal("final: siLibFunc(): symbol is not of type ENTRY_FUNCTION");
+	return (s->u.eFunction.serialNum < 0 ? true : false);
+}
+
+bool isCallableFunc(SymbolEntry * s)
+{
+	if(s->entryType!=ENTRY_FUNCTION) internal("final: siLibFunc(): symbol is not of type ENTRY_FUNCTION");
+	return (s->u.eFunction.serialNum >= -LF_CALLABLE_NUM  ? true : false);
+
 }

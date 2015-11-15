@@ -39,11 +39,31 @@ void   delete (void *);
 extern int linecount;
 extern const char * filename;
 
+
+/* ---------------------------------------------------------------------
+   ---------------------- General Definitions Guide --------------------
+   --------------------------------------------------------------------- */
+
+/* ommit definition if compiler is NOT meant to run on a Linux system */
+#define LINUX_SYS
+
+/* Library functions definitions */
 #define LF_PARAM_NUM_MAX 2
 #define LF_INTERNAL_NUM 6
 #define LF_CALLABLE_NUM 15
 #define LF_NUM (LF_INTERNAL_NUM + LF_CALLABLE_NUM)
 
 
+/* Other definitions of global interest declared in local files:
+ * - QUAD_ARRAY_SIZE		max number of quads in a function + 1			intermediate.h
+ * - STRINGS_MAX			max number of string literals in a program		final.c
+ * - STRING_LABEL_BUF_SIZE	bytes for a string label, limits strings liter	final.c
+ * - LABEL_BUF_SIZE			bytes for a label, limits quads and functions	final.c
+ */
+
+/* Definitions/Flags imposed by Makefile:
+ * - INTERMEDIATE:	for intermediate code production only, not final assembly code
+ * - DEBUG:			for printing various progress messages
+ */
 
 #endif
