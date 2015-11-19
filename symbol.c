@@ -181,6 +181,9 @@ void openScope ()
     else
         newScope->nestingLevel = currentScope->nestingLevel + 1;
     
+	//our addition
+	newScope->gcHungry = false; 
+
     currentScope = newScope;
 }
 
@@ -193,7 +196,10 @@ void closeScope ()
         SymbolEntry * next = e->nextInScope;
         
         hashTable[e->hashValue] = e->nextHash;
-        destroyEntry(e);
+		/* ATTENTION: We commented the following line to retain SymbolEntries in heap
+		 *			  since they are necessary for final code generation
+		 */
+        //destroyEntry(e);
         e = next;
     }
     
@@ -489,8 +495,10 @@ void endFunctionHeader (SymbolEntry * f, Type type)
             internal("Cannot end parameters in an already defined function");
             break;
         case PARDEF_DEFINE:
+			//4 next lines are our addition
 			f->u.eFunction.serialNum = maxSerialNum++;
             f->u.eFunction.posOffset = fixOffset(f->u.eFunction.firstArgument);
+			f->u.eFunction.gcHungry = false;
             f->u.eFunction.resultType = type;
             type->refCount++;
             break;
@@ -680,9 +688,9 @@ unsigned int sizeOfType (Type type)
 bool equalType (Type type1, Type type2)
 {
 	/* We added: a recursive typecheking for lists and arrays and
-	 *			 compatibility with TYPE_ANY that is always equal with any type
+	 *			 compatibility with TYPE_ANY that is always equal with any type except typeVoid
 	 */
-	if(type1->kind==TYPE_ANY || type2->kind==TYPE_ANY)
+	if((type1->kind==TYPE_ANY && type2->kind!=TYPE_VOID) || (type2->kind==TYPE_ANY && type1->kind!=TYPE_VOID))
 		return true;
 
     if (type1->kind != type2->kind)
@@ -746,7 +754,8 @@ void printType (Type type)
 }
 
 
-Type getType(SymbolEntry * s){
+Type getType(SymbolEntry * s)
+{
 	if(s==NULL) internal("getType(): SymbolEntry arg is NULL");
 	switch(s->entryType){
 		case ENTRY_CONSTANT:	return s->u.eConstant.type;
@@ -758,6 +767,18 @@ Type getType(SymbolEntry * s){
 	}
 }
 
+int getOffset(SymbolEntry * s)
+{
+	if(s==NULL) internal("getOffset(): SymbolEntry arg is NULL");
+	switch(s->entryType){
+		case ENTRY_VARIABLE:	return s->u.eVariable.offset;
+		case ENTRY_PARAMETER:	return s->u.eParameter.offset;
+		case ENTRY_TEMPORARY:	return s->u.eTemporary.offset;
+		case ENTRY_FUNCTION:	internal("geOffset(): unsupported ENTRY_FUNCTION");
+		case ENTRY_CONSTANT:	internal("geOffset(): unsupported ENTRY_CONSTANT");
+		default:				internal("getOffset(): unhandled entry type");
+	}
+}
 
 const char * typeToStr (Type type)
 {

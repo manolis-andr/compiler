@@ -3,6 +3,9 @@
 #User-defined flags, that must be given as a command line argument
 FLAGS=
 
+## Flags that can be used:
+#	- DGC_FREE: ti define GC_FREE and avoid using garbage collector (no arrays and lists allowed then)
+
 CC=gcc
 CFLAGS= $(UFLAGS)
 
@@ -16,7 +19,7 @@ ifeq ($(INTERMEDIATE),1)
 	CFLAGS+= -DINTERMEDIATE
 endif
 
-OBJS= parser.o lexer.o symbol.o general.o error.o intermediate.o
+OBJS= parser.o lexer.o symbol.o general.o error.o intermediate.o datastructs.o
 
 ifeq ($(INTERMEDIATE),0)
 	OBJS+= final.o
@@ -39,13 +42,13 @@ lexer.c: lexer.l parser.h
 lexer.o: lexer.c $(DEPS) symbol.h intermediate.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-parser.o: parser.c $(DEPS) symbol.h intermediate.h final.h
+parser.o: parser.c $(DEPS) datastructs.h symbol.h intermediate.h final.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 intermediate.o: intermediate.c $(DEPS) symbol.h intermediate.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-final.o: final.c $(DEPS) symbol.h intermediate.h final.h
+final.o: final.c $(DEPS) symbol.h datastructs.h intermediate.h final.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 %.o: %.c %.h $(DEPS)

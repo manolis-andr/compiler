@@ -7,7 +7,7 @@
  *  Project       : PCL Compiler
  *  Version       : 1.0 alpha
  *  Written by    : Nikolaos S. Papaspyrou (nickie@softlab.ntua.gr)
- *  Modified by	  : Manolis Andtoulidakis
+ *  Modified by	  : Manolis Androulidakis
  *  Date          : May 14, 2003
  *  Description   : Generic symbol table in C
  *
@@ -141,8 +141,10 @@ struct SymbolEntry_tag {
              PARDEF_CHECK                        /* Εν μέσω ελέγχου    */
          } pardef;
          int           firstQuad;             /* Αρχική τετράδα        */
-		 int			posOffset;
+		 int			posOffset;			//bytes allocated in stack for parameters, updated by endFunctionHeader()
+		 int			negOffset;			//bytes allocated in stack for variables and temporaries, updated before closeScope() of definitions
 		 int			serialNum;			//used for assembly numbering
+		 bool			gcHungry;			//used to discern if function calls garbage collector
       } eFunction;
 
       struct {                                /****** Παράμετρος *******/
@@ -171,7 +173,10 @@ struct Scope_tag {
     unsigned int   negOffset;                /* Τρέχον αρνητικό offset */
     Scope        * parent;                   /* Περιβάλλουσα εμβέλεια  */
     SymbolEntry  * entries;                  /* Σύμβολα της εμβέλειας  */
+	/* our additions */
 	Type		   returnType;				 /* Τύπος επιστροφής δομικου μπλοκ που ορίζει την εμβέλεια */
+	bool		   gcHungry;				 /* Αν στο εν λόγω scope υπάρχει άμεση ή έμμεση κλήση στον garbage collector */
+
 };
 
 
@@ -235,5 +240,6 @@ const char *  typeToStr			 (Type type);
 bool		  isLibFunc			 (SymbolEntry * s);
 bool		  isCallableFunc	 (SymbolEntry * s);
 Type		  getType			 (SymbolEntry * s);
+int			  getOffset			 (SymbolEntry * s);
 
 #endif

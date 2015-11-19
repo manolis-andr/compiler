@@ -20,10 +20,7 @@
 
 #include "symbol.h"
 
-#define QUAD_ARRAY_SIZE 129		//num of quads supported in a function + 1
-
-//finds the real index out quadNext, for the circular buffer of quads q[]
-#define INDEX(X) (X % QUAD_ARRAY_SIZE)
+#define QUAD_ARRAY_SIZE 256		//num of quads supported in a tony program: QUAD_ARRAY_SIZE - 1
 
 //checks if after optimization a quad remains present (active) and has not been deleted
 #define ISACTIVE(NUM) ((NUM)<0 ? false : true)

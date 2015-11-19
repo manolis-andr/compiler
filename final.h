@@ -18,7 +18,8 @@
 #ifndef __FINAL_H__
 #define __FINAL_H__
 
-void	skeletonBegin	(const char * progname);
+void	initializeFinal	();
+void	skeletonBegin	(Operand prog, Queue gcfunc, Queue gcvar);
 void	skeletonEnd		();
 void	printFinal		();
 

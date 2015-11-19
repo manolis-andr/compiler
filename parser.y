@@ -12,6 +12,7 @@
 #include "symbol.h"
 #include "error.h"
 #include "general.h"
+#include "datastructs.h"
 #include "intermediate.h"
 
 #define SYMBOLTABLE_SIZE 3
@@ -29,125 +30,6 @@
 /* -------------------------------------------------------------
    -------------------------- Datatypes ------------------------
    ------------------------------------------------------------- */
-
-/* Generic Stack and Queue datatypes		*/
-/* ---------------------------------------- */
-
-/* generic node used in Stack and Queue*/
-typedef struct genNode_tag {
-	void *					data;
-	struct genNode_tag *	next;
-} genNode;
-
-struct Stack_tag {
-	genNode *	top;
-	size_t		elementSize;
-};
-
-typedef struct Stack_tag * Stack;
-
-struct Queue_tag{
-	genNode *	first;
-	genNode *	last;
-	size_t		elementSize;
-}; 
-
-typedef struct Queue_tag * Queue;
-
-
-/* Generic Stack Functions */
-
-Stack newStack(size_t elementSize) 
-{	
-	Stack s = new(sizeof(struct Stack_tag));
-	s->top = NULL;
-	s->elementSize = elementSize;
-	return s;
-}
-
-void push(Stack stack)
-{
-	genNode * n = (genNode *) new(sizeof(genNode));
-	n->data = new(stack->elementSize);
-	n->next = stack->top;
-	stack->top = n;
-}
-
-void pop(Stack stack)
-{
-	if(stack->top==NULL) internal("attempt to pop from empty stack");
-	genNode * temp = stack->top;
-	stack->top = stack->top->next;
-	delete(temp->data);
-	delete(temp);
-}
-
-void * top(Stack stack)	
-{
-	if(stack->top==NULL) fatal("attempt to access empty stack"); 
-	return stack->top->data;
-}
-
-
-/* Generic Queue Functions */
-
-Queue newQueue(size_t elementSize) 
-{
-	Queue q = new(sizeof(struct Queue_tag));
-	q->first = q->last = NULL; 
-	q->elementSize = elementSize;
-	return q;
-}
-
-void addFirst(Queue queue)
-{
-	genNode * n = (genNode *) new(sizeof(genNode));
-	n->data = new(queue->elementSize);
-	if(queue->first==NULL){
-		n->next = NULL;
-		queue->last = n;
-	}else
-		n->next = queue->first;
-	queue->first = n;
-}
-
-void addLast(Queue queue)
-{
-	genNode * n = (genNode *) new(sizeof(genNode));
-	n->data = new(queue->elementSize);
-	n->next = NULL;
-	if(queue->last==NULL){
-		queue->first = n;
-	}else
-		queue->last->next = n;
-	queue->last = n;
-}
-
-void * getFirst(Queue q) 
-{ 
-	if(q->first==NULL) fatal("attempt to access empty queue");
-	return q->first->data;
-}
-
-void * getLast(Queue q) 
-{ 
-	if(q->last==NULL) fatal("attempt to access empty queue");
-	return q->last->data;
-}
-
-void * removeFirst(Queue q)
-{
-	if(q->first==NULL) fatal("attempt to access empty queue");
-	void * data = q->first->data;
-	genNode * temp = q->first;
-	q->first = q->first->next;
-	if(q->first==NULL) q->last=NULL; //queue empty
-	delete(temp);
-	return data;
-}
-
-bool isEmpty(Queue q) {return (q->first==NULL); }
-
 
 /* Helper datatypes (structs & functions) for temporary saving of values */
 /* --------------------------------------------------------------------- */
@@ -217,12 +99,15 @@ void printParQuads(callNode * n){
 
 struct Memory mem;
 
-Stack callStack;
-Stack ifStack;
-Stack forStack;
+Stack callStack;		//Stack of callNodes
+Stack ifStack;			//Stack of ifNodes
+Stack forStack;			//Stack of forNodes
 
-bool firstBlock = true;
-bool OFLAG		= false;
+Queue gcHungryFunc;			//Queue of Operands
+static Queue gcHungryVar;	//Queue of SymbolEntries (that will be used as Queue of list of SymbolEntries), only local to file
+
+Operand		firstBlock  = NULL;
+bool		OFLAG		= false;
 
 
 /* -------------------------------------------------------------
@@ -243,6 +128,7 @@ typedef struct LibFunc_tag{
 	char *			name;
 	Type			returnType;
 	int				paramNum;
+	bool			gcHungry;
 	LibFuncParam    paramList[LF_PARAM_NUM_MAX];
 } LibFunc;
 
@@ -265,6 +151,7 @@ void declareLF(LibFunc lf)
 		newParameter(p->name,p->type,p->passMode,func);
 	}
 	endFunctionHeader(func,lf.returnType);
+	func->u.eFunction.gcHungry = lf.gcHungry;
 	closeScope();
 }
 
@@ -275,37 +162,37 @@ void declareAllLibFunc()
 	LibFunc libraryFunctions [LF_NUM] = {
 		
 		/* Internal */
-		/* name		returnType			argNum	  for each arg: name, type, passMode		 */
-		{ "newarrp",typeIArray(typeAny),	1, { {"size", typeInteger,			PASS_BY_VALUE}, } },
-		{ "newarrv",typeIArray(typeAny),	1, { {"size", typeInteger,			PASS_BY_VALUE}, } },
-		{ "consp",	typeList(typeAny),		2, { {"head", typeInteger,			PASS_BY_VALUE}, 
-												 {"tail", typePointer(typeAny),	PASS_BY_VALUE}, } },
-		{ "consv",	typeList(typeAny),		2, { {"head", typeInteger,			PASS_BY_VALUE}, 
-												 {"tail", typePointer(typeAny),	PASS_BY_VALUE}, } },
-		{ "head",	typeAny,				1, { {"l",	  typeList(typeAny),	PASS_BY_VALUE}, } },
-		{ "tail",	typeList(typeAny),		1, { {"l",	  typeList(typeAny),	PASS_BY_VALUE}, } },
+		/* name		returnType			argNum gcHungry  for each arg: name, type, passMode		 */
+		{ "newarrp",typeIArray(typeAny),	1, false, { {"size", typeInteger,			PASS_BY_VALUE}, } },
+		{ "newarrv",typeIArray(typeAny),	1, false, { {"size", typeInteger,			PASS_BY_VALUE}, } },
+		{ "consp",	typeList(typeAny),		2, true,  { {"head", typeInteger,			PASS_BY_VALUE}, 
+														{"tail", typePointer(typeAny),	PASS_BY_VALUE}, } },
+		{ "consv",	typeList(typeAny),		2, true,  { {"head", typeInteger,			PASS_BY_VALUE}, 
+														{"tail", typePointer(typeAny),	PASS_BY_VALUE}, } },
+		{ "head",	typeAny,				1, false, { {"l",	  typeList(typeAny),	PASS_BY_VALUE}, } },
+		{ "tail",	typeList(typeAny),		1, false, { {"l",	  typeList(typeAny),	PASS_BY_VALUE}, } },
 
 		/* Callable */
-		/* name		returnType	argNum	  for each arg: name, type, passMode		 */
-		{ "puti",	typeVoid,		1, { {"n", typeInteger,				PASS_BY_VALUE},	} },
-		{ "putb",	typeVoid,		1, { {"b", typeBoolean,				PASS_BY_VALUE},	} },
-		{ "putc",	typeVoid,		1, { {"c", typeChar,				PASS_BY_VALUE},	} },
-		{ "puts",	typeVoid,		1, { {"s", typeIArray(typeChar),	PASS_BY_VALUE},	} },
-		{ "geti",	typeInteger,	0, NULL												  },
-		{ "getb",	typeBoolean,	0, NULL												  },
-		{ "getc",	typeChar,		0, NULL												  },
-		{ "gets",	typeVoid,		2, { {"n", typeInteger,				PASS_BY_VALUE}, 
-										 {"s", typeIArray(typeChar),	PASS_BY_VALUE},	} },
-		{ "abs",	typeInteger,	1, { {"n", typeInteger,				PASS_BY_VALUE},	} },
-		{ "ord",	typeInteger,	1, { {"c", typeChar,				PASS_BY_VALUE},	} },
-		{ "chr",	typeChar,		1, { {"n", typeInteger,				PASS_BY_VALUE},	} },
-		{ "strlen",	typeInteger,	1, { {"s", typeIArray(typeChar),	PASS_BY_VALUE},	} },
-		{ "strcmp",	typeInteger,	2, { {"s1",typeIArray(typeChar),	PASS_BY_VALUE},  
-										 {"s2",typeIArray(typeChar),	PASS_BY_VALUE},	} },
-		{ "strcpy",	typeVoid,		2, { {"trg",typeIArray(typeChar),	PASS_BY_VALUE}, 
-										 {"src",typeIArray(typeChar),	PASS_BY_VALUE},	} },
-		{ "strcat",	typeVoid,		2, { {"trg",typeIArray(typeChar),	PASS_BY_VALUE}, 
-										 {"src",typeIArray(typeChar),	PASS_BY_VALUE},	} },
+		/* name		returnType	argNum gcHungry  for each arg: name, type, passMode		 */
+		{ "puti",	typeVoid,		1, false,	{ {"n", typeInteger,			PASS_BY_VALUE},	} },
+		{ "putb",	typeVoid,		1, false,	{ {"b", typeBoolean,			PASS_BY_VALUE},	} },
+		{ "putc",	typeVoid,		1, false,	{ {"c", typeChar,				PASS_BY_VALUE},	} },
+		{ "puts",	typeVoid,		1, false,	{ {"s", typeIArray(typeChar),	PASS_BY_VALUE},	} },
+		{ "geti",	typeInteger,	0, false,	NULL											  },
+		{ "getb",	typeBoolean,	0, false,	NULL											  },
+		{ "getc",	typeChar,		0, false,	NULL											  },
+		{ "gets",	typeVoid,		2, false,	{ {"n", typeInteger,			PASS_BY_VALUE}, 
+												  {"s", typeIArray(typeChar),	PASS_BY_VALUE},	} },
+		{ "abs",	typeInteger,	1, false,	{ {"n", typeInteger,			PASS_BY_VALUE},	} },
+		{ "ord",	typeInteger,	1, false,	{ {"c", typeChar,				PASS_BY_VALUE},	} },
+		{ "chr",	typeChar,		1, false,	{ {"n", typeInteger,			PASS_BY_VALUE},	} },
+		{ "strlen",	typeInteger,	1, false,	{ {"s", typeIArray(typeChar),	PASS_BY_VALUE},	} },
+		{ "strcmp",	typeInteger,	2, false,	{ {"s1",typeIArray(typeChar),	PASS_BY_VALUE},  
+												  {"s2",typeIArray(typeChar),	PASS_BY_VALUE},	} },
+		{ "strcpy",	typeVoid,		2, false,	{ {"trg",typeIArray(typeChar),	PASS_BY_VALUE}, 
+												  {"src",typeIArray(typeChar),	PASS_BY_VALUE},	} },
+		{ "strcat",	typeVoid,		2, false,	{ {"trg",typeIArray(typeChar),	PASS_BY_VALUE}, 
+												  {"src",typeIArray(typeChar),	PASS_BY_VALUE},	} },
 	};
 
 	int i;
@@ -415,21 +302,34 @@ void declareAllLibFunc()
 
 %%
 
-program		: {openScope(); declareAllLibFunc();} func_def { if(OFLAG) {optimize();} printQuads(); printFinal(); skeletonEnd(); closeScope();}
+program		: {openScope(); declareAllLibFunc();} func_def { skeletonBegin(firstBlock,gcHungryFunc,gcHungryVar); printFinal(); skeletonEnd(); closeScope();}
 
 /* -------------------------------------------------------------------------------------------------------------------------------- 
  *	BLOCK DEFINITION (FUNCTIONS)
  * -------------------------------------------------------------------------------------------------------------------------------- */ 
 
-func_def	: "def"	{mem.forward=0;} header ':'	{if(firstBlock) {skeletonBegin($3); firstBlock=!firstBlock;}} /* first func_def, main block */ 
+func_def	: "def"	{mem.forward=0;} header ':'	{if(firstBlock==NULL) {firstBlock=oU($3);}} /* first func_def, main block */ 
 			  def_list							{genquad(O_UNIT,oU($3),o_,o_); }
 			  stmt_list 
 			  "end"								{backpatch($8.NEXT,quadNext); 
 												 //printf("before endu\n");
 												 genquad(O_ENDU,oU($3),o_,o_);
 												 if(OFLAG) optimize();
-												 printQuads(); 
-												 printFinal();
+												 printQuads();
+												 SymbolEntry *s = lookupEntry($3,LOOKUP_ALL_SCOPES,false); 
+												 s->u.eFunction.negOffset = currentScope->negOffset;
+												 #ifndef GC_FREE
+												 s->u.eFunction.gcHungry  = currentScope->gcHungry;
+												 if(currentScope->gcHungry) {
+													 addLastData(gcHungryFunc,oU($3));
+													 addLastData(gcHungryVar,currentScope->entries); //add list of scope's variables
+													 #ifdef DEBUG
+													 printf("added gcHungry %s\n",$3);
+													 printf("first entry in scope: %s\n",currentScope->entries->id);
+													 #endif
+												 }
+												 #endif
+												 //printFinal();
 												 #ifdef DEBUG
 												 printf("scope %s closes\n",$3);
 												 #endif
@@ -494,7 +394,7 @@ type		: "int"					{$$=typeInteger;}
 			| "list" '[' type ']'	{$$=typeList($3);}
 			;
 
-func_decl	: "decl"	{mem.forward=1;}	header ;
+func_decl	: "decl"	{mem.forward=1;}	header {closeScope();}
 
 var_def		: type		{mem.type=$1;}		id_list ;
 
@@ -616,6 +516,12 @@ simple_full	: ',' simple simple_full | /* nothing */
 call		: T_id '('			{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
 								 if(s->entryType!=ENTRY_FUNCTION) ssmerror("identifier is not a function");
 								 if(!isCallableFunc(s)) ssmerror("function is not callable"); //we assume that there are some non callable functions
+								 #ifndef GC_FREE
+								 /* Garbage Collection info gathering. If function called is gcHungry, scope calls implicitly garbage collector.
+								  * If function called is a foward declaration, we pessimistically assume that it will call garbage collector.
+								  * This assumption is being made for sipmlicity and library functions are EXCLUDED from it since none is gc hungry */
+								 if(s->u.eFunction.gcHungry || (!isLibFunc(s) && s->u.eFunction.isForward)) currentScope->gcHungry=true;
+								 #endif
 								 push(callStack);
 								 callNode * n = top(callStack);
 								 n->func = s;	
@@ -642,6 +548,13 @@ call		: T_id '('			{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 								}
 			| T_id '(' ')'		{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
 								 if(s->entryType!=ENTRY_FUNCTION)		sserror("identifier is not a function");
+								 if(!isCallableFunc(s)) ssmerror("function is not callable"); //we assume that there are some non callable functions
+								 #ifndef GC_FREE
+								 /* Garbage Collection info gathering. If function called is gcHungry, scope calls implicitly garbage collector.
+								  * If function called is a foward declaration, we pessimistically assume that it will call garbage collector.
+								  * This assumption is being made for sipmlicity. */
+								 if(s->u.eFunction.gcHungry || (!isLibFunc(s) && s->u.eFunction.isForward)) currentScope->gcHungry=true;
+								 #endif
 								 if(s->u.eFunction.firstArgument!=NULL) sserror("function %s expects more arguments",s->id);
 								 if(!equalType(s->u.eFunction.resultType,typeVoid)){
 									 SymbolEntry * w = newTemporary(s->u.eFunction.resultType);
@@ -964,19 +877,27 @@ rval:		  T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,type
 										 else sserror("type mismatch in list construction (head: %s tail: %s)",typeToStr($1.type),typeToStr($1.type));
 										 if($1.cond) $1.place = evaluateCondition($1.TRUE,$1.FALSE);
 										 Operand z = oS(newTemporary($$.type));
-										 if(equalType($1.type,typeIArray(typeAny)) || equalType($1.type,typeList(typeAny))){
-											 genquad(O_PAR,$1.place,oV,o_);
-											 genquad(O_PAR,$3.place,oV,o_);
-											 genquad(O_PAR,z,oRET,o_);
-											 genquad(O_CALL,o_,o_,oU("consp"));
-										 } else {
-											 genquad(O_PAR,$1.place,oV,o_);
-											 genquad(O_PAR,$3.place,oV,o_);
-											 genquad(O_PAR,z,oRET,o_);
-											 genquad(O_CALL,o_,o_,oU("consv"));
-										 }
+										 const char * func;
+										 if(equalType($1.type,typeIArray(typeAny)) || equalType($1.type,typeList(typeAny)))		func = "consp";
+										 else																					func = "consv";
+										 genquad(O_PAR,$1.place,oV,o_);
+										 genquad(O_PAR,$3.place,oV,o_);
+										 genquad(O_PAR,z,oRET,o_);
+										 genquad(O_CALL,o_,o_,oU(func));
 										 $$.place=z;
 										 $$.cond=false;
+										 #ifndef GC_FREE
+										 currentScope->gcHungry=true; //Garbage collection info gathering. Consv and consp are implicit gc calls
+										 Iterator i = newIterator(gcHungryFunc);
+										 bool found = false;
+										 while(iterHasNext(i)){
+											 Operand f = iterNext(i);
+											 const char * fstring = f->name;
+											 if(strcmp(func,fstring)==0) {found=true; break;}
+										 }
+										 if(!found)
+											addLastData(gcHungryFunc,oU(func)); //add consv or consp in the queue if they are not already there
+										 #endif
 										}
 
 			| "nil"						{$$.type=typeList(typeAny);		$$.place=oS(newConstant("nil",$$.type));	$$.cond=false;}
@@ -1131,6 +1052,13 @@ int main(int argc, char * argv[])
 	callStack = newStack(sizeof(callNode));
 	forStack  = newStack(sizeof(forNode));
 	ifStack   = newStack(sizeof(ifNode));
+	#ifndef INTERMEDIATE
+	initializeFinal();
+	#endif
+	#ifndef GC_FREE
+	gcHungryFunc = newQueue(sizeof(Operand));
+	gcHungryVar  = newQueue(sizeof(SymbolEntry *));
+	#endif
 
 	#ifdef LINUX_SYS
 	/* Install Singal Handler */

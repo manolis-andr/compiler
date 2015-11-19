@@ -21,6 +21,7 @@
 
 #include "intermediate.h"
 #include "general.h"
+#include "datastructs.h"
 #include "symbol.h"
 #include "error.h"
 
@@ -29,13 +30,12 @@
    ---------------- Constant definitions ---------------------  
    ----------------------------------------------------------- */
 
-#define STRINGS_MAX				128		/* maximum number of string literals in a tony program */
 
 #define STRING_LABEL_BUF_SIZE	9		/* bytes needed to buffer a string label in a char array. Limits string literals to 9999. */
 #define LABEL_BUF_SIZE			6		/* bytes needed to buffer a quad or a function label in a char array. Limits to 9999 quads & 999 functions */
 #define STR_BUF_SIZE			20		/* bytes allocated for the return buffer of str function */
 
-/* Number of string literals in a tony program supported: min{STRINGS_MAX,10^(STRING_LABEL_SIZE-5)} */
+/* Number of string literals in a tony program supported: 10^(STRING_LABEL_SIZE-5) */
 
 /* For buf sizes, add one to increase number supported by a factor of 10 */
 
@@ -74,6 +74,8 @@ char *	insertString	(SymbolEntry *s);
 void	printStrings	();
 char *	fixString		(char * str);
 
+void	createCallTable	();
+
 char *  str             (const char *s, ...);
 int		typeSize		(Operand o);
 int		refTypeSize		(Operand o);
@@ -82,29 +84,43 @@ int		refTypeSize		(Operand o);
    ---------------------- Global variables ---------------------
    ------------------------------------------------------------- */
 
+static Queue gcHungryVar;		//Queue only for this file
+
 FILE * fout = NULL;
 int	fprintStart = 1;
 
 char *	extrn[LF_NUM];
 int		extrnNum = 0;
 
-char *	strings[STRINGS_MAX];	/* FIXME: array could be converted to a Queue for felxibility */
+Queue	strings;		//Queue of char *, that holds strings of program
 int		stringsNum = 0;
 
 Operand currentUnit;	//the unit whose final code is generated, useful for jumps
+int		currentNestingLevel;
 
+#ifndef GC_FREE
+int		gcCallNum = 1; //number of gc calls in a function
+Queue	gcCallParam;
+#endif
 
 /* -------------------------------------------------------------
    -------------------- Public Functions -----------------------
    ------------------------------------------------------------- */
 
+void initializeFinal()
+{
+	strings = newQueue(sizeof(char *)); 
+	#ifndef GC_FREE
+	gcCallParam = newQueue(sizeof(int));
+	#endif
+}
 
 void printFinal() 
 {
 	int i;
 	for(i=fprintStart;i<quadNext;i++)
 	{
-		Quad qd = q[INDEX(i)];
+		Quad qd = q[i];
 		if(qd.num<0) continue; //quad has been removed by optimizer
 		Operand x = qd.x;
 		Operand y = qd.y;
@@ -191,7 +207,9 @@ void printFinal()
 				codel(name(x),"proc","near",NULL,false);
 				code("push","bp",NULL);
 				code("mov","bp","sp");
-				int localSize = - currentScope->negOffset;
+				SymbolEntry * se = getSymbol(x);
+				int localSize = - se->u.eFunction.negOffset;
+				currentNestingLevel = se->nestingLevel + 1;
 				code("sub","sp",str("%d",localSize));
 				//it is always the first quad to be printed in a block, so we can now save the name of the block
 				currentUnit = x;
@@ -201,6 +219,9 @@ void printFinal()
 				code("pop","bp",NULL);
 				code("ret",NULL,NULL);
 				codel(name(x),"endp",NULL,NULL,false);
+				#ifndef GC_FREE
+				createCallTable();
+				#endif
 				break;
 			case O_CALL:
 				if(z->type!=OPERAND_UNIT) internal("final: printFinal(): operand z must be an OPERAND_UNIT Operand");
@@ -208,9 +229,16 @@ void printFinal()
 				if(equalType(s->u.eFunction.resultType,typeVoid))
 					code("sub","sp","2");
 				updateAL(s);
-				if(isLibFunc(s)) insertExtern(name(z));	//if the function is a library function  we must inlcude an extrn declaration at the end
+				if(isLibFunc(s)) 
+					insertExtern(name(z));	//if the function is a library function  we must inlcude an extrn declaration at the end
 				code("call",str("near ptr %s",name(z)),NULL);
 				int paramSize = s->u.eFunction.posOffset;
+				#ifndef GC_FREE
+				if(s->u.eFunction.gcHungry){
+					fprintf(fout,"@%s_call_%d:\n",name(currentUnit)+1,gcCallNum++);
+					addLastData(gcCallParam,&paramSize);
+				}
+				#endif
 				code("add","sp",str("%d",paramSize+4));
 				break;
 			case O_RET:
@@ -241,29 +269,83 @@ void printFinal()
 }
 
 
-void skeletonBegin(char * progname){
+void skeletonBegin(Operand prog, Queue gcfunc, Queue gcvar)
+{
 	fprintf(fout,
 			"xseg\tsegment\tpublic 'code'\n"
-			"\tassume\tcs:xseg, ds:xseg, ss:xseg\n"
+			"\tassume\tds:xseg, ss:xseg\n"	/* we deleted "cs:xseg, " here to avoid asm a4004 warning */
 			"\torg\t100h\n"
-			"main\tproc\tnear\n"
+			"main\tproc\tnear\n");
+	#ifndef GC_FREE
+	/* Initialize memory */
+	fprintf(fout,";; initialize memory: 2/3 heap and 1/3 stack\n");
+	code("mov","cx","OFFSET DGROUP:_start_of_space");
+	code("mov","word ptr _space_from","cx");
+	code("mov","word ptr _next","cx");
+	code("mov","ax","0FFFEh");
+	code("sub","ax","cx");
+	code("xor","dx","dx");
+	code("mov","bx","3");
+	code("idiv","bx",NULL);
+	code("and","ax","0FFFEh");
+	code("add","cx","ax");
+	code("mov","word ptr _limit_from","cx");
+	code("mov","word ptr _space_to","cx");
+	code("add","cx","ax");
+	code("mov","word ptr _limit_to","cx");
+	/* Register allocating functions */
+	fprintf(fout,";;; register gc hungry functions\n");
+	while(!isEmpty(gcfunc)){
+		Operand func = removeFirst(gcfunc);
+		code("mov","ax",str("OFFSET %s_call_table",name(func)));
+		code("call","near ptr _register_call_table",NULL);
+	}
+	#endif
+	/* Call main, print _ret_of_main label and exit */
+	fprintf(fout,
+			";;; calling main\n"
 			"\tcall\tnear ptr %s\n"
+			#ifndef GC_FREE
+			"_ret_of_main:\n"
+			#endif
 			"\tmov\tax, 4C00h\n"
 			"\tint\t21h\n"
 			"main\tendp\n"
-			,name(oU(progname)));
+			,name(prog));
+	#ifndef GC_FREE
+	/* Initialize gcHungry variables Queue */
+	gcHungryVar = gcvar;
+	#endif
 }
 
 void skeletonEnd() 
 {
-	printExtern();
 	printStrings();
-	fprintf(fout,
-			"xseg\tends\n"
-			"\tend\tmain\n"
+	printExtern();
+	#ifndef GC_FREE
+	fprintf(fout,"\textrn\t_register_call_table : proc\n");
+	fprintf(fout,"\tpublic\t_next\n"
+			"\tpublic\t_space_from\n"
+			"\tpublic\t_limit_from\n"
+			"\tpublic\t_space_to\n"
+			"\tpublic\t_limit_to\n"
+			"\tpublic\t_ret_of_main\n"
+			"_next\tdw\t?\n"
+			"_space_from\tdw\t?\n"
+			"_limit_from\tdw\t?\n"
+			"_space_to\tdw\t?\n"
+			"_limit_to\tdw\t?\n"
 			);
+	#endif
+	fprintf(fout,"\txseg\tends\n");
+	#ifndef GC_FREE
+	fprintf(fout,"_DATA_END\tsegment\tbyte public 'stack'\n"
+			"_start_of_space\tlabel\tbyte\n"
+			"_DATA_END\tends\n"
+			"DGROUP\tgroup\txseg, _DATA_END\n");
+	#endif
+	fprintf(fout,"\tend\tmain\n");
 }
-
 
 /* Printing functions for assembly commands */
 /* -------------------------------------------------------- */
@@ -317,9 +399,9 @@ void load(char * r, Operand o){
 				case ENTRY_VARIABLE:
 					offset = s->u.eVariable.offset;
 					if(sizeOfType(s->u.eVariable.type)==1) size="byte"; else size="word";
-					if(s->nestingLevel==currentScope->nestingLevel)						//local
+					if(s->nestingLevel==currentNestingLevel)						//local
 						code("mov",r,str("%s ptr [bp%d]",size,offset));	
-					else if(s->nestingLevel<currentScope->nestingLevel){				//non-local
+					else if(s->nestingLevel<currentNestingLevel){				//non-local
 						getAR(s);
 						code("mov",r,str("%s ptr [si%d]",size,offset));
 					}
@@ -330,9 +412,9 @@ void load(char * r, Operand o){
 				case ENTRY_TEMPORARY:
 					offset = s->u.eTemporary.offset;
 					if(sizeOfType(s->u.eTemporary.type)==1) size="byte"; else size="word";
-					if(s->nestingLevel==currentScope->nestingLevel)						//local
+					if(s->nestingLevel==currentNestingLevel)						//local
 						code("mov",r,str("%s ptr [bp%d]",size,offset));	
-					else if(s->nestingLevel<currentScope->nestingLevel){				//non-local
+					else if(s->nestingLevel<currentNestingLevel){				//non-local
 						getAR(s);
 						code("mov",r,str("%s ptr [si%d]",size,offset));
 					}
@@ -343,12 +425,12 @@ void load(char * r, Operand o){
 				case ENTRY_PARAMETER:
 					offset = s->u.eParameter.offset;
 					if(sizeOfType(s->u.eParameter.type)==1) size="byte"; else size="word";
-					if(s->nestingLevel==currentScope->nestingLevel)					
+					if(s->nestingLevel==currentNestingLevel)					
 						if(s->u.eParameter.mode==PASS_BY_VALUE)							//local - pass by value
 							code("mov",r,str("%s ptr [bp+%d]",size,offset));
 						else															//local - pass by reference
 							{code("mov","si",str("word ptr [bp+%d]",offset));	code("mov",r,str("%s ptr [si]",size));}
-					else if(s->nestingLevel<currentScope->nestingLevel)					//non-local - pass by value
+					else if(s->nestingLevel<currentNestingLevel)					//non-local - pass by value
 						if(s->u.eParameter.mode==PASS_BY_VALUE)
 							{getAR(s);	code("mov",r,str("%s ptr [si+%d]",size,offset));}
 						else															//non-local - pass by reference
@@ -397,9 +479,9 @@ void loadAddr(char * r,Operand o)
 				case ENTRY_VARIABLE:
 					offset = s->u.eVariable.offset;
 					if(sizeOfType(s->u.eVariable.type)==1) size="byte"; else size="word";
-					if(s->nestingLevel==currentScope->nestingLevel)						//local
+					if(s->nestingLevel==currentNestingLevel)						//local
 						code("lea",r,str("%s ptr [bp%d]",size,offset));	
-					else if(s->nestingLevel<currentScope->nestingLevel){				//non-local
+					else if(s->nestingLevel<currentNestingLevel){				//non-local
 						getAR(s);
 						code("lea",r,str("%s ptr [si%d]",size,offset));
 					}
@@ -410,9 +492,9 @@ void loadAddr(char * r,Operand o)
 				case ENTRY_TEMPORARY:
 					offset = s->u.eTemporary.offset;
 					if(sizeOfType(s->u.eTemporary.type)==1) size="byte"; else size="word";
-					if(s->nestingLevel==currentScope->nestingLevel)						//local
+					if(s->nestingLevel==currentNestingLevel)						//local
 						code("lea",r,str("%s ptr [bp%d]",size,offset));	
-					else if(s->nestingLevel<currentScope->nestingLevel){				//non-local
+					else if(s->nestingLevel<currentNestingLevel){				//non-local
 						getAR(s);
 						code("lea",r,str("%s ptr [si%d]",size,offset));
 					}
@@ -423,12 +505,12 @@ void loadAddr(char * r,Operand o)
 				case ENTRY_PARAMETER:
 					offset = s->u.eParameter.offset;
 					if(sizeOfType(s->u.eParameter.type)==1) size="byte"; else size="word";
-					if(s->nestingLevel==currentScope->nestingLevel)					
+					if(s->nestingLevel==currentNestingLevel)					
 						if(s->u.eParameter.mode==PASS_BY_VALUE)							//local - pass by value
 							code("lea",r,str("%s ptr [bp+%d]",size,offset));
 						else															//local - pass by reference
 							code("mov",r,str("word ptr [bp+%d]",offset));
-					else if(s->nestingLevel<currentScope->nestingLevel)					//non-local - pass by value
+					else if(s->nestingLevel<currentNestingLevel)					//non-local - pass by value
 						if(s->u.eParameter.mode==PASS_BY_VALUE)
 							{getAR(s);	code("lea",r,str("%s ptr [si+%d]",size,offset));}
 						else															//non-local - pass by reference
@@ -470,9 +552,9 @@ void store(char *r, Operand o)
 				case ENTRY_VARIABLE:
 					offset = s->u.eVariable.offset;
 					if(sizeOfType(s->u.eVariable.type)==1) size="byte"; else size="word";
-					if(s->nestingLevel==currentScope->nestingLevel)						//local
+					if(s->nestingLevel==currentNestingLevel)						//local
 						code("mov",str("%s ptr [bp%d]",size,offset),r);	
-					else if(s->nestingLevel<currentScope->nestingLevel){				//non-local
+					else if(s->nestingLevel<currentNestingLevel){				//non-local
 						getAR(s);
 						code("mov",str("%s ptr [si%d]",size,offset),r);
 					}
@@ -483,9 +565,9 @@ void store(char *r, Operand o)
 				case ENTRY_TEMPORARY:
 					offset = s->u.eTemporary.offset;
 					if(sizeOfType(s->u.eTemporary.type)==1) size="byte"; else size="word";
-					if(s->nestingLevel==currentScope->nestingLevel)						//local
+					if(s->nestingLevel==currentNestingLevel)						//local
 						code("mov",str("%s ptr [bp%d]",size,offset),r);	
-					else if(s->nestingLevel<currentScope->nestingLevel){				//non-local
+					else if(s->nestingLevel<currentNestingLevel){				//non-local
 						getAR(s);
 						code("mov",str("%s ptr [si%d]",size,offset),r);
 					}
@@ -496,12 +578,12 @@ void store(char *r, Operand o)
 				case ENTRY_PARAMETER:
 					offset = s->u.eParameter.offset;
 					if(sizeOfType(s->u.eParameter.type)==1) size="byte"; else size="word";
-					if(s->nestingLevel==currentScope->nestingLevel)					
+					if(s->nestingLevel==currentNestingLevel)					
 						if(s->u.eParameter.mode==PASS_BY_VALUE)							//local - pass by value
 							code("mov",str("%s ptr [bp+%d]",size,offset),r);
 						else															//local - pass by reference
 							{code("mov","si",str("word ptr [bp+%d]",offset));	code("mov",str("%s ptr [si]",size),r);}
-					else if(s->nestingLevel<currentScope->nestingLevel)					//non-local - pass by value
+					else if(s->nestingLevel<currentNestingLevel)					//non-local - pass by value
 						if(s->u.eParameter.mode==PASS_BY_VALUE)
 							{getAR(s);	code("mov",str("%s ptr [si+%d]",size,offset),r);}
 						else															//non-local - pass by reference
@@ -540,7 +622,7 @@ void getAR(SymbolEntry * s)
 	if(s->entryType!=ENTRY_FUNCTION) internal("final: getAR() should be called with an SymbolEntry * of EntryType ENTRY_FUNCTION");
 	code("mov","si","word ptr [bp+4]");
 	int i;
-	int links = currentScope->nestingLevel - s->nestingLevel - 1;
+	int links = currentNestingLevel - s->nestingLevel - 1;
 	for(i=0;i<links;i++)
 		code("mov","si","word ptr [si+4]");
 }
@@ -549,12 +631,12 @@ void getAR(SymbolEntry * s)
 void updateAL(SymbolEntry * s)
 {
 	if(s->entryType!=ENTRY_FUNCTION) internal("final: updateAL() should be called with an Operand that contains an ENTRY_FUNCTION symbol");
-	int np = currentScope->nestingLevel - 1;	//caller function nesting level
+	int np = currentNestingLevel - 1;	//caller function nesting level
 	int nx = s->nestingLevel;					//callee function nesting level
 	#ifdef DEBUG
 	printf("updateAL: calling %s: n.caller=%d, n.callee=%d\n",s->id,np,nx);
 	#endif
-	if(np<nx)
+	if(np<nx || isLibFunc(s))
 		code("push","bp",NULL);
 	else if (np == nx)
 		code("push","word ptr [bp+4]",NULL);
@@ -582,6 +664,9 @@ char * name(Operand o)
 	int num	= s->u.eFunction.serialNum;
 	if(!isLibFunc(s))	sprintf(buf,"_%s_%d",p,num);	//ordinary function	
 	else				sprintf(buf,"_%s",p);			//run-time Library Function
+	#ifdef DEBUG
+	printf("exiting name() with buf: %s\n",buf);
+	#endif
 	return buf;
 }
 
@@ -631,7 +716,18 @@ void insertExtern(char * func)
 	extrn[extrnNum++] = func;
 }
 
-void printExtern()	{ int i;   for(i=0;i<extrnNum;i++)	fprintf(fout,"\textrn\t%s : proc\n",extrn[i]); }
+void printExtern() { 
+	int i;   
+	fprintf(fout,";;; extern library functions\n"); 
+	for(i=0;i<extrnNum;i++){	
+		fprintf(fout,"\textrn\t%s : proc\n",extrn[i]); 
+		#ifndef GC_FREE
+		/* FIXME: avoid hardcoded way to add _cons_call_tables */
+		if(strcmp(extrn[i],"_consv")==0) fprintf(fout,"\textrn\t_consv_call_table : word\n");
+		if(strcmp(extrn[i],"_consp")==0) fprintf(fout,"\textrn\t_consp_call_table : word\n");
+		#endif
+	}
+}
 
 
 
@@ -659,9 +755,8 @@ char * insertString(SymbolEntry * s)
 	printf("entering insertString()\n");
 #endif
 	if(s->entryType!=ENTRY_CONSTANT || !equalType(s->u.eConstant.type,typeIArray(typeChar))) internal("final: insertString() not called with string");
-	if(stringsNum==STRINGS_MAX) fatal("Too many strings declared. Rcompile the compiler by increasing the definition of STRINGS_MAX");
 	char * str = fixString(strdup(s->u.eConstant.value.vString));
-	strings[stringsNum] = str;
+	addLastData(strings,str);
 	char * buf = (char *) new(STRING_LABEL_BUF_SIZE*sizeof(char));
 	sprintf(buf,"@str%d",stringsNum);
 	stringsNum++;
@@ -678,9 +773,10 @@ void printStrings()
 	#endif
 
 	int i,j;
+	fprintf(fout,";;; string literals\n"); 
 	for(i=0;i<stringsNum;i++){
 		fprintf(fout,"@str%d",i);
-		char * buf = strings[i];
+		char * buf = removeFirst(strings);
 		if(buf==NULL) fatal("printStrings(): attempted to print a null string");
 		int buflen = strlen(buf);
 		bool printableSeq = false;
@@ -701,6 +797,43 @@ void printStrings()
 		fprintf(fout,"\tdb\t0\n");
 	}
 }
+
+#ifndef GC_FREE
+/* Function to create call table for each gc hungry function */
+/* -------------------------------------------------------- */
+void createCallTable()
+{
+	SymbolEntry * s = getSymbol(currentUnit);
+	if(!s->u.eFunction.gcHungry) return;
+	#ifdef DEBUG
+	printf("createCallTable for %s\n",currentUnit->name);
+	#endif
+	int i;
+	fprintf(fout,"%s_call_table:\n",name(currentUnit));
+	for(i=1;i<gcCallNum;i++){
+		int funcNum		= s->u.eFunction.serialNum;
+		char const * funcName = s->id;
+		fprintf(fout,"@call_%d_%d\tdw\t@%s_%d_call_%d\n",funcNum,i,funcName,funcNum,i);	//1st word
+		if(i!=gcCallNum-1)	fprintf(fout,"\tdw\t@call_%d_%d\n",funcNum,i+1);			//2nd word, next record exists
+		else				fprintf(fout,"\tdw\t0\n");									//2nd word, no next record
+		int * paramSize = removeFirst(gcCallParam);
+		int localSize = - s->u.eFunction.negOffset;
+		fprintf(fout,"\tdw\t%d+%d+%d+%d\n",*paramSize+4,0,localSize,4);
+		//list of next words, pointers to the heap
+		SymbolEntry * vars = getFirst(gcHungryVar);
+		while(vars!=NULL){
+			if(vars->entryType!=ENTRY_FUNCTION && vars->entryType!=ENTRY_CONSTANT && equalType(getType(vars),typeList(typeAny)))
+				fprintf(fout,"\tdw\t%d\t;%s\n",getOffset(vars),vars->id);
+			vars = vars->nextInScope;
+		}
+		fprintf(fout,"\tdw\t0\n");
+	}
+	//reinitialize for new unit and throw away this unit's gc hungry variables
+	if(!isEmpty(gcCallParam)) internal("final: createCallTable(): gcCallParam Queue is not empty as it should");
+	gcCallNum=1;
+	if(!isEmpty(gcHungryVar)) removeFirst(gcHungryVar);
+}
+#endif
 
 
 /* Minor Helper Functions */
@@ -747,5 +880,10 @@ int refTypeSize(Operand o)
 	if(!equalType(type,typeIArray(typeAny))) internal("final: refTypeSize() type of Operand is not an array");
 	return sizeOfType(type->refType);
 }
+
+
+
+
+
 
 
