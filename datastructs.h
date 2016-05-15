@@ -9,26 +9,26 @@
 
 /* generic node used in Stack and Queue*/
 typedef struct genNode_tag {
-	void *					data;
-	struct genNode_tag *	next;
+	void				*data;
+	struct genNode_tag	*next;
 } genNode;
 
 struct Stack_tag {
-	genNode *	top;
+	genNode	*	top;
 	size_t		elementSize;
 };
 
-typedef struct Stack_tag * Stack;
+typedef struct Stack_tag *Stack;
 
 struct Queue_tag{
-	genNode *	first;
-	genNode *	last;
+	genNode	*	first;
+	genNode	*	last;
 	size_t		elementSize;
 }; 
 
-typedef struct Queue_tag * Queue;
+typedef struct Queue_tag *Queue;
 
-typedef genNode ** Iterator;
+typedef genNode **Iterator;
 
 
 /* Generic Stack Functions */

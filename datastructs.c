@@ -31,7 +31,7 @@ Stack newStack(size_t elementSize)
 
 void push(Stack stack)
 {
-	genNode * n = (genNode *) new(sizeof(genNode));
+	genNode *n = (genNode *) new(sizeof(genNode));
 	n->data = new(stack->elementSize);
 	n->next = stack->top;
 	stack->top = n;
@@ -40,15 +40,16 @@ void push(Stack stack)
 void pop(Stack stack)
 {
 	if(stack->top==NULL) internal("attempt to pop from empty stack");
-	genNode * temp = stack->top;
+	genNode *temp = stack->top;
 	stack->top = stack->top->next;
 	delete(temp->data);
 	delete(temp);
 }
 
-void * top(Stack stack)	
+void *top(Stack stack)	
 {
-	if(stack->top==NULL) fatal("attempt to access empty stack"); 
+	if(stack->top==NULL) 
+		fatal("attempt to access empty stack"); 
 	return stack->top->data;
 }
 
@@ -66,7 +67,7 @@ Queue newQueue(size_t elementSize)
 //allocates new data Node in start but does not insert data in the start
 void addFirst(Queue queue)
 {
-	genNode * n = (genNode *) new(sizeof(genNode));
+	genNode *n = (genNode *) new(sizeof(genNode));
 	n->data = new(queue->elementSize);
 	if(queue->first==NULL){
 		n->next = NULL;
@@ -79,7 +80,7 @@ void addFirst(Queue queue)
 //does not allocate new data Node, but inserts data pointer in the start
 void addFirstData(Queue q, void * data)
 {
-	genNode * n = (genNode *) new(sizeof(genNode));
+	genNode *n = (genNode *) new(sizeof(genNode));
 	n->data = data;
 	if(q->first==NULL){
 		n->next = NULL;
@@ -92,7 +93,7 @@ void addFirstData(Queue q, void * data)
 //allocates new data Node in end but does not insert data at the end
 void addLast(Queue queue)
 {
-	genNode * n = (genNode *) new(sizeof(genNode));
+	genNode *n = (genNode *) new(sizeof(genNode));
 	n->data = new(queue->elementSize);
 	n->next = NULL;
 	if(queue->last==NULL){
@@ -105,7 +106,7 @@ void addLast(Queue queue)
 //does not allocate new data Node, but inserts data pointer at the end
 void addLastData(Queue q,void * data)
 {
-	genNode * n = (genNode *) new(sizeof(genNode));
+	genNode *n = (genNode *) new(sizeof(genNode));
 	n->data = data;
 	n->next = NULL;
 	if(q->last==NULL){
@@ -115,19 +116,19 @@ void addLastData(Queue q,void * data)
 	q->last = n;
 }
 
-void * getFirst(Queue q) 
+void *getFirst(Queue q) 
 { 
 	if(q->first==NULL) fatal("attempt to access empty queue");
 	return q->first->data;
 }
 
-void * getLast(Queue q) 
+void *getLast(Queue q) 
 { 
 	if(q->last==NULL) fatal("attempt to access empty queue");
 	return q->last->data;
 }
 
-void * removeFirst(Queue q)
+void *removeFirst(Queue q)
 {
 	if(q->first==NULL) fatal("attempt to remove from empty queue");
 	void * data = q->first->data;
@@ -150,5 +151,5 @@ Iterator newIterator(Queue q)
 	return i;
 }
 
-bool	iterHasNext(Iterator i)	{ return (*i==NULL) ? false : true ; }
-void *  iterNext(Iterator i)	{ void * data=(*i)->data; *i=(*i)->next;  return data;}
+bool	iterHasNext(Iterator i)	{ return (*i == NULL) ? false : true ; }
+void	*iterNext(Iterator i)	{ void *data = (*i)->data; *i = (*i)->next;  return data;}

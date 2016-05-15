@@ -28,11 +28,15 @@
    ---------------------- Global variables ---------------------
    ------------------------------------------------------------- */
 
-FILE * iout = NULL;
+FILE *iout = NULL;
 
-// circular buffer for quads. Period = QUAD_ARRAY_SIZE
-//max number of quads supported in a function = QUAD_ARRAY_SIZE-1.
-Quad q[QUAD_ARRAY_SIZE];
+/*
+ * buffer for quads and size of buffer. Initial size = QUAD_ARRAY_SIZE
+ * max number of quads supported in a function = QUAD_ARRAY_SIZE - 1.
+ * If a function needs more quads then we resize q with realloc
+ */
+Quad *q;
+static int qSize;
 
 int  qprintStart = 1;
 
@@ -57,6 +61,12 @@ const Operand oRESULT =	&(operandConst[5]);
    ------------------------- Functions -------------------------
    ------------------------------------------------------------- */
 
+void initIntermediate() 
+{ 
+	qSize = QUAD_ARRAY_SIZE;
+	q = (Quad *) malloc(qSize * sizeof(Quad)); 
+}
+
 void genquad(OperatorType op,Operand x,Operand y,Operand z)
 {
 	q[quadNext].num= quadNext;
@@ -65,7 +75,10 @@ void genquad(OperatorType op,Operand x,Operand y,Operand z)
 	q[quadNext].y  = y;
 	q[quadNext].z  = z;
 	quadNext++;
-	if(quadNext==QUAD_ARRAY_SIZE) internal("Maximum quad limit reached. Recompile with a greater QUAD_ARRAY_SIZE\n");
+	if (quadNext == qSize) {
+		qSize = 2 * qSize;
+		q = (Quad *) realloc(q, qSize * sizeof(Quad));	//double quad array size
+	}
 }
 
 
@@ -101,19 +114,18 @@ Operand oL(int quadLabel)
 }
 
 //called both on definition and on call of a function (block)
-Operand oU(const char * unitName)
+Operand oU(SymbolEntry * s)
 {
 	#ifdef DEBUG
-	//printf("oU: %s\n",unitName);
+	//printf("oU: %s\n", s->id);
 	#endif
-	SymbolEntry * s = lookupEntry(unitName,LOOKUP_ALL_SCOPES,false);
-	if(s==NULL) internal("oU: function not declared in SymbolTable");
+	if(s == NULL) internal("oU: function not declared in SymbolTable");
 	Operand o = (Operand ) new(sizeof(struct Operand_tag));
 	o->type = OPERAND_UNIT;
 	o->name = s->id;
 	o->u.symbol = s;
 	#ifdef DEBUG
-	//printf("oU: %s finished\n",unitName);
+	//printf("oU: %s finished\n", s->id);
 	#endif
 	return o;
 }
@@ -192,16 +204,16 @@ void opt_inverseCopyPropagation()
 {
 	int i;
 	//up to quadNext-1 because the quads that will be transformed always go in pairs
-	for(i=qprintStart;i<quadNext-1;i++){
-		if(!ISACTIVE(q[i].num)) continue;
+	for (i = qprintStart; i < quadNext-1; i++){
+		if (!ISACTIVE(q[i].num)) continue;
 		OperatorType op1 = q[i].op;
 		OperatorType op2 = q[i+1].op;
-		if( (op1==O_ADD || op1==O_SUB || op1==O_MULT || op1==O_DIV || op1==O_MOD) && op2==O_ASSIGN ){
-			if(getSymbol(q[i].z)==getSymbol(q[i+1].x)) {
+		if( (op1==O_ADD || op1==O_SUB || op1==O_MULT || op1==O_DIV || op1==O_MOD) && op2==O_ASSIGN ) {
+			if (getSymbol(q[i].z) == getSymbol(q[i+1].x) ) {
 				q[i].z = q[i+1].z;
 				q[i+1].num = -1; //remove quad, deactivate
 				#ifdef DEBUG
-				printf("opt: inverseCopyPropagation: quad %d modified, quad %d removed\n",i,i+1);
+				printf("opt: inverseCopyPropagation: quad %d modified, quad %d removed\n", i, i+1);
 				#endif
 			}
 		}
@@ -211,7 +223,7 @@ void opt_inverseCopyPropagation()
 void opt_constantFolding()
 {
 	int i;
-	for(i=qprintStart;i<quadNext;i++){
+	for(i=qprintStart;i<quadNext;i++) {
 		if(!ISACTIVE(q[i].num)) continue;
 		OperatorType op = q[i].op;
 		if( (op==O_ADD || op==O_SUB || op==O_MULT || op==O_DIV || op==O_MOD) && 

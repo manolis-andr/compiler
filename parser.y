@@ -15,14 +15,17 @@
 #include "datastructs.h"
 #include "intermediate.h"
 
-#define SYMBOLTABLE_SIZE 3
+#define SYMBOLTABLE_SIZE 127
 
-//if interest in intermediate code only, define in a dummy way all the public functions of final.c 
+/* 
+ * if interested in intermediate code only, define in a dummy way all the public 
+ * functions of final.c 
+ */
 #ifndef INTERMEDIATE
 	#include "final.h"
 #else
-	void printFinal() { static bool flag = true;	if(flag) {fprintf(stderr,"Intermediate code only. Make-option INTERMEDIATE=1\n"); flag=!flag;} }
-	void skeletonBegin(const char * c) {;}
+	void printFinal() { if(flag) fprintf(stderr, "Intermediate code only. Make-option INTERMEDIATE=1\n"); }
+	void skeletonBegin(const char * c, Queue q1, Queue q2) {;}
 	void skeletonEnd() {;}
 #endif
 
@@ -35,14 +38,14 @@
 /* --------------------------------------------------------------------- */
 
 /* Struct for remembering previous symbol settings, when we dig deeper into the symbols 
- * ONLY for sequential symbol traversal (e.g. stmt), NOT for recursive traversal / nested symbols (e.g. if,for,call)
+ * ONLY for sequential symbol traversal (e.g. stmt), NOT for recursive traversal / nested symbols (e.g. if, for, call)
  */
 struct Memory{
-	SymbolEntry *	func;
+	SymbolEntry		*func;
 	Type			type;
 	PassMode		ref;
 	int				forward;
-	List *			lnext;
+	List			*lnext;
 };
 
 
@@ -66,8 +69,8 @@ typedef struct forNode_tag {
 } forNode;
 
 typedef struct parNode_tag{
-	Operand					place;
-	Operand					passMode;
+	Operand		place;
+	Operand		passMode;
 } parNode;
 
 typedef struct callNode_tag {
@@ -75,6 +78,10 @@ typedef struct callNode_tag {
 	SymbolEntry *	arg;
 	Queue			params;
 } callNode;
+
+typedef struct funcNode_tag {
+	SymbolEntry *	symbol;
+} funcNode;
 
 
 #ifdef DEBUG
@@ -102,6 +109,7 @@ struct Memory mem;
 Stack callStack;		//Stack of callNodes
 Stack ifStack;			//Stack of ifNodes
 Stack forStack;			//Stack of forNodes
+Stack funcStack;		//Stack of funcNodes
 
 Queue gcHungryFunc;			//Queue of Operands
 static Queue gcHungryVar;	//Queue of SymbolEntries (that will be used as Queue of list of SymbolEntries), only local to file
@@ -302,37 +310,41 @@ void declareAllLibFunc()
 
 %%
 
-program		: {openScope(); declareAllLibFunc();} func_def { skeletonBegin(firstBlock,gcHungryFunc,gcHungryVar); printFinal(); skeletonEnd(); closeScope();}
+program		: { openScope(); declareAllLibFunc(); } 
+			  func_def 
+			  { skeletonBegin(firstBlock, gcHungryFunc, gcHungryVar); printFinal(); skeletonEnd(); closeScope();}
 
 /* -------------------------------------------------------------------------------------------------------------------------------- 
  *	BLOCK DEFINITION (FUNCTIONS)
  * -------------------------------------------------------------------------------------------------------------------------------- */ 
 
-func_def	: "def"	{mem.forward=0;} header ':'	{if(firstBlock==NULL) {firstBlock=oU($3);}} /* first func_def, main block */ 
-			  def_list							{genquad(O_UNIT,oU($3),o_,o_); }
+func_def	: "def"	{mem.forward=0;} header ':'	{if(firstBlock==NULL) 
+													{funcNode *n = top(funcStack);	firstBlock=oU(n->symbol);}} /* first func_def, main block */ 
+			  def_list							{funcNode *n = top(funcStack);
+												 genquad(O_UNIT,oU(n->symbol),o_,o_); }
 			  stmt_list 
-			  "end"								{backpatch($8.NEXT,quadNext); 
-												 //printf("before endu\n");
-												 genquad(O_ENDU,oU($3),o_,o_);
+			  "end"								{backpatch($8.NEXT,quadNext);
+												 funcNode *n = top(funcStack);	
+												 SymbolEntry *s = n->symbol;
+												 genquad(O_ENDU,oU(s),o_,o_);
 												 if(OFLAG) optimize();
 												 printQuads();
-												 SymbolEntry *s = lookupEntry($3,LOOKUP_ALL_SCOPES,false); 
 												 s->u.eFunction.negOffset = currentScope->negOffset;
 												 #ifndef GC_FREE
 												 s->u.eFunction.gcHungry  = currentScope->gcHungry;
 												 if(currentScope->gcHungry) {
-													 addLastData(gcHungryFunc,oU($3));
+													 addLastData(gcHungryFunc,oU(s));
 													 addLastData(gcHungryVar,currentScope->entries); //add list of scope's variables
 													 #ifdef DEBUG
-													 printf("added gcHungry %s\n",$3);
-													 printf("first entry in scope: %s\n",currentScope->entries->id);
+													 printf("added gcHungry in gcHungryFunc: %s\n",s->id);
+													 printf("first entry in gcHungryVar: %s\n",currentScope->entries->id);
 													 #endif
 												 }
 												 #endif
-												 //printFinal();
 												 #ifdef DEBUG
 												 printf("scope %s closes\n",$3);
 												 #endif
+												 pop(funcStack);
 												 closeScope();} ;
 
 def_list	: func_def def_list 
@@ -341,7 +353,10 @@ def_list	: func_def def_list
 			| /* nothing */
 			
 			/* checks that T_id is uniquely defined in the current scope (not already in Symbol Table) inside newFunction */
-header		: type T_id		{	mem.func = newFunction($2); 
+header		: type T_id		{	mem.func = newFunction($2);
+								push(funcStack);	
+								funcNode *n = top(funcStack);
+								n->symbol = mem.func;
 								if(mem.forward==1) 
 									forwardFunction(mem.func);
 								openScope();
@@ -352,6 +367,9 @@ header		: type T_id		{	mem.func = newFunction($2);
 							} 
 			  '(' formal_list ')' {endFunctionHeader(mem.func,$1); $$=$2; mem.func->u.eFunction.firstQuad=quadNext;}
 			| T_id			{	mem.func = newFunction($1); 
+								push(funcStack);	
+								funcNode *n = top(funcStack);
+								n->symbol = mem.func;
 								if(mem.forward==1) 
 									forwardFunction(mem.func); 
 								openScope();
@@ -445,7 +463,7 @@ stmt		: simple			{$$.NEXT=emptylist();}
 			;		
 
 
-for_clause	: "for" simple_list ';' {push(forStack);				forNode * n=top(forStack);		n->condLabel=quadNext;}
+for_clause	: "for" simple_list ';' {push(forStack);				forNode *n = top(forStack);		n->condLabel=quadNext;}
 				expr ';'			{if(!equalType($5.type,typeBoolean)) sserror("second part of 'for' clause must be a boolean expression");
 									 if(!$5.cond) {ListPair l = createCondition($5.place); $5.TRUE=l.TRUE; $5.FALSE=l.FALSE;}
 									 forNode *n=top(forStack);		n->loopLabel = quadNext;}	
@@ -542,7 +560,7 @@ call		: T_id '('			{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 									 $$.place= oS(w);
 								 }
 								 else $$.place=NULL;
-								 genquad(O_CALL,o_,o_,oU(s->id)); 
+								 genquad(O_CALL,o_,o_,oU(s)); 
 								 $$.type=s->u.eFunction.resultType;
 								 pop(callStack);
 								}
@@ -562,7 +580,7 @@ call		: T_id '('			{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 									 $$.place= oS(w);
 									 }
 								 else $$.place=NULL;
-								 genquad(O_CALL,o_,o_,oU(s->id)); 
+								 genquad(O_CALL,o_,o_,oU(s)); 
 								 $$.type=s->u.eFunction.resultType;
 								}	
 			
@@ -640,14 +658,14 @@ expr_full	:',' expr			{callNode * n = top(callStack);
 
 atom		: T_id				{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
 								switch(s->entryType){
-									case(ENTRY_FUNCTION):	sserror("identifier is a function and is not called properly");
-									case(ENTRY_VARIABLE):	$$.type=s->u.eVariable.type;
-									case(ENTRY_PARAMETER):	$$.type=s->u.eParameter.type;
+									case(ENTRY_FUNCTION):	sserror("identifier is a function and is not called properly"); break;
+									case(ENTRY_VARIABLE):	$$.type=s->u.eVariable.type;	break;
+									case(ENTRY_PARAMETER):	$$.type=s->u.eParameter.type;	break;
 								}
 								$$.place=oS(s);
 								$$.lval=true;
 								}
-			| T_string			{$$.type=typeIArray(typeChar); /*FIXME: maybe here we must use pure sized array*/
+			| T_string			{$$.type=typeIArray(typeChar); 
 								 SymbolEntry * s = newConstant($1,$$.type,$1);
 								 $$.place=oS(s);
 								 $$.lval=false; 
@@ -859,13 +877,13 @@ rval:		  T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,type
 											genquad(O_MULT,$4.place,s,w);
 											genquad(O_PAR,w,oV,o_);
 											genquad(O_PAR,z,oRET,o_);
-											genquad(O_CALL,o_,o_,oU("newarrp"));
+											genquad(O_CALL,o_,o_,oU(lookupEntry("newarrp",LOOKUP_ALL_SCOPES,false)));
 										 } else {
 											Operand s = oS(newConstant(NULL,typeInteger,sizeOfType($2)));	//size of referenced type in bytes
 											genquad(O_MULT,$4.place,s,w);
 											genquad(O_PAR,w,oV,o_);
 											genquad(O_PAR,z,oRET,o_);
-											genquad(O_CALL,o_,o_,oU("newarrv"));
+											genquad(O_CALL,o_,o_,oU(lookupEntry("newarrv",LOOKUP_ALL_SCOPES,false)));
 										 }
 										 $$.place=z;
 										 $$.cond=false;
@@ -877,9 +895,11 @@ rval:		  T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,type
 										 else sserror("type mismatch in list construction (head: %s tail: %s)",typeToStr($1.type),typeToStr($1.type));
 										 if($1.cond) $1.place = evaluateCondition($1.TRUE,$1.FALSE);
 										 Operand z = oS(newTemporary($$.type));
-										 const char * func;
-										 if(equalType($1.type,typeIArray(typeAny)) || equalType($1.type,typeList(typeAny)))		func = "consp";
-										 else																					func = "consv";
+										 SymbolEntry *func;
+										 if(equalType($1.type,typeIArray(typeAny)) || equalType($1.type,typeList(typeAny)))	
+											 func = lookupEntry("consp",LOOKUP_ALL_SCOPES,false);
+										 else																					
+											 func = lookupEntry("consv",LOOKUP_ALL_SCOPES,false);
 										 genquad(O_PAR,$1.place,oV,o_);
 										 genquad(O_PAR,$3.place,oV,o_);
 										 genquad(O_PAR,z,oRET,o_);
@@ -892,8 +912,7 @@ rval:		  T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,type
 										 bool found = false;
 										 while(iterHasNext(i)){
 											 Operand f = iterNext(i);
-											 const char * fstring = f->name;
-											 if(strcmp(func,fstring)==0) {found=true; break;}
+											 if(!strcmp(func->id,f->name)) {found=true; break;}
 										 }
 										 if(!found)
 											addLastData(gcHungryFunc,oU(func)); //add consv or consp in the queue if they are not already there
@@ -903,14 +922,12 @@ rval:		  T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,type
 			| "nil"						{$$.type=typeList(typeAny);		$$.place=oS(newConstant("nil",$$.type));	$$.cond=false;}
 
 			| "nil?" '(' expr ')'		{if(!equalType($3.type,typeList(typeAny))) sserror("expression in brackets must be some list type");
-										 //printf("in nil?\n");
 										 $$.type=typeBoolean;
 										 $$.TRUE=makelist(quadNext);
 										 genquad(O_EQ,$3.place,oS(newConstant("nil",typeList(typeAny))),oSTAR);
 										 $$.FALSE=makelist(quadNext);
 										 genquad(O_JUMP,o_,o_,oSTAR);
 										 $$.cond=true;
-										 //printf("out of nil?\n");
 										 }
 
 			| "head" '(' expr ')'		{if(!equalType($3.type,typeList(typeAny))) 
@@ -919,7 +936,7 @@ rval:		  T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,type
 										 Operand z = oS(newTemporary($$.type));
 										 genquad(O_PAR,$3.place,oV,o_);
 										 genquad(O_PAR,z,oRET,o_);
-										 genquad(O_CALL,o_,o_,oU("head"));
+										 genquad(O_CALL,o_,o_,oU(lookupEntry("head",LOOKUP_ALL_SCOPES,false)));
 										 $$.place=z;
 										 $$.cond=false;
 										}
@@ -929,7 +946,7 @@ rval:		  T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,type
 										 Operand z = oS(newTemporary($$.type));
 										 genquad(O_PAR,$3.place,oV,o_);
 										 genquad(O_PAR,z,oRET,o_);
-										 genquad(O_CALL,o_,o_,oU("tail"));
+										 genquad(O_CALL,o_,o_,oU(lookupEntry("tail",LOOKUP_ALL_SCOPES,false)));
 										 $$.place=z;
 										 $$.cond=false;
 										}
@@ -952,15 +969,15 @@ rval:		  T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,type
 
 /* Global filestream pointers */
 
-extern FILE *	yyin;
-extern FILE *	iout;
+extern FILE *yyin;
+extern FILE *iout;
 #ifdef INTERMEDIATE
-FILE *	fout;
+FILE *fout;
 #else
-extern FILE * fout;
+extern FILE *fout;
 #endif
 
-const char *	filename;
+const char *filename;
 
 
 /* removeExtension():
@@ -970,12 +987,12 @@ const char *	filename;
 void removeExtension(char * s)
 {
 	int i=0;
-	while(s[i]!='\0') i++;
+	while (s[i] != '\0') i++;
 	i--;
-	while(i>=0){
-		if(s[i]=='.')		{s[i]='\0';	break;}		//we found the last dot
-		else if(s[i]=='/')	break;					//in Linux we left the directory so the name is clean of extensions
-		else				i--;					//keep searching for the dot of the extension
+	while (i >= 0){
+		if (s[i] == '.')		{s[i] = '\0';	break;}	//we found the last dot
+		else if (s[i] == '/')	break;					//in Linux we left the directory so the name is clean of extensions
+		else					i--;					//keep searching for the dot of the extension
 	}
 }
 
@@ -986,30 +1003,31 @@ void parseArguments(int argc,char * argv[]){
 	bool IFLAG = false;
 
 	int i, fileArg=0;
-	for(i=1;i<argc;i++){
-		if(strcmp(argv[i],"-f")==0)
-			FFLAG=true;
-		else if(strcmp(argv[i],"-i")==0)
-			IFLAG=true;
-		else if(strcmp(argv[i],"-O")==0)
-			OFLAG=true;
-		else if(fileArg==0)
-			fileArg=i;
+	for(i = 1 ;i < argc; i++){
+		if (!strcmp(argv[i], "-f"))
+			FFLAG = true;
+		else if (!strcmp(argv[i], "-i"))
+			IFLAG = true;
+		else if (!strcmp(argv[i], "-O"))
+			OFLAG = true;
+		else if (fileArg == 0)
+			fileArg = i;
 		else
 			fatal("uknown flag or excessive input argument");
 	}
-	if(fileArg && (FFLAG || IFLAG))
+	if (fileArg && (FFLAG || IFLAG))
 		fatal("too many input arguments. Omit flags or source fielname");
 	else if (!FFLAG && !IFLAG && !fileArg)
 		fatal("too few input arguments. Specify source filename");
 
 	/* Input Filename Specification */
 	if(FFLAG || IFLAG)
-		filename="stdin";
-	else{
+		filename = "stdin";
+	else {
 		filename = argv[fileArg];
-		yyin = fopen(filename,"r"); //Open file and redirect yylex to it
-		if(yyin==NULL) fatal("filename %s is not valid. The file cannot be found.",filename);
+		yyin = fopen(filename, "r"); //Open file and redirect yylex to it
+		if(yyin == NULL) 
+			fatal("filename %s is not valid. File cannot be found.", filename);
 	}
 
 	
@@ -1017,21 +1035,21 @@ void parseArguments(int argc,char * argv[]){
 	unsigned int size = strlen(filename) + FILE_EXTENSION_LENGTH; 
 	#undef FILE_EXTENSION_LENGTH
 	char fclean[size], buf[size];
-	strcpy(fclean,filename);
+	strcpy(fclean, filename);
 	removeExtension(fclean);
 
 	/* Intermediate Code Filename Sepcification */ 
-	if(!IFLAG){
-		sprintf(buf,"%s.imm",fclean);
-		iout = fopen(buf,"w");
-	}else
+	if(!IFLAG) {
+		sprintf(buf, "%s.imm", fclean);
+		iout = fopen(buf, "w");
+	} else
 		iout = stdout;
 	
 	/* Final Code Filename Sepcification */ 
-	if(!FFLAG){
-		sprintf(buf,"%s.asm",fclean);
-		fout = fopen(buf,"w");
-	}else
+	if(!FFLAG) {
+		sprintf(buf, "%s.asm", fclean);
+		fout = fopen(buf, "w");
+	} else
 		fout = stdout;
 }
 
@@ -1040,8 +1058,8 @@ void parseArguments(int argc,char * argv[]){
 void sigsegv_hndler(int signum)
 {
 	error("SIGSEV (Segmentation fault) caught. Printing and exiting...");
-	if(iout!=NULL) {printQuads();	fflush(iout);	fclose(iout);}
-	if(fout!=NULL) {printFinal();	fflush(fout);	fclose(fout);}
+	if (iout != NULL) {printQuads();	fflush(iout);	fclose(iout);}
+	if (fout != NULL) {printFinal();	fflush(fout);	fclose(fout);}
 	fatal("SIGSEV: exited");
 }
 #endif
@@ -1052,8 +1070,10 @@ int main(int argc, char * argv[])
 	callStack = newStack(sizeof(callNode));
 	forStack  = newStack(sizeof(forNode));
 	ifStack   = newStack(sizeof(ifNode));
+	funcStack = newStack(sizeof(funcStack));
+	initIntermediate();
 	#ifndef INTERMEDIATE
-	initializeFinal();
+	initFinal();
 	#endif
 	#ifndef GC_FREE
 	gcHungryFunc = newQueue(sizeof(Operand));
@@ -1065,8 +1085,8 @@ int main(int argc, char * argv[])
 	signal(SIGSEGV, sigsegv_hndler);
 	#endif
 
-	/* Arguments parsing */
-	parseArguments(argc,argv);
+	/* Arguments parsing: determine input-output streams */
+	parseArguments(argc, argv);
 
 	/* Initializing Symbol Table  */
 	initSymbolTable(SYMBOLTABLE_SIZE);

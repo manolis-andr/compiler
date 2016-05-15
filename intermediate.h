@@ -20,7 +20,7 @@
 
 #include "symbol.h"
 
-#define QUAD_ARRAY_SIZE 256		//num of quads supported in a tony program: QUAD_ARRAY_SIZE - 1
+#define QUAD_ARRAY_SIZE 256		//initial num of quads supported in a tony function: QUAD_ARRAY_SIZE - 1
 
 //checks if after optimization a quad remains present (active) and has not been deleted
 #define ISACTIVE(NUM) ((NUM)<0 ? false : true)
@@ -29,7 +29,7 @@
    --------------------------- Ορισμός τύπων ---------------------------
    --------------------------------------------------------------------- */
 
-typedef enum{
+typedef enum {
 	O_ASSIGN,
 	O_ARRAY,
 	O_ADD,
@@ -50,10 +50,10 @@ typedef enum{
 	O_CALL,
 	O_RET,
 	O_PAR
-}OperatorType;
+} OperatorType;
 
 
-typedef enum{
+typedef enum {
 	OPERAND_SYMBOL,
 	OPERAND_QLABEL,
 	OPERAND_UNIT,
@@ -63,7 +63,7 @@ typedef enum{
 	OPERAND_NULL,
 	OPERAND_STAR,
 	OPERAND_RESULT,
-}OperandType;
+} OperandType;
 
 
 typedef struct Operand_tag * Operand;
@@ -80,7 +80,7 @@ struct Operand_tag{
 };
 
 
-typedef struct Quad_tag{
+typedef struct Quad_tag {
 	int				num;	//the number of the quad, if it is negative the quad has been omited by the optimizer
 	OperatorType	op;
 	Operand			x;
@@ -91,16 +91,16 @@ typedef struct Quad_tag{
 
 /* ----------------------- List ------------------------------ */
 
-typedef struct Node_tag{
+typedef struct Node_tag {
 	int data;
 	struct Node_tag * next;
 } Node;
 
-typedef struct{
+typedef struct {
 	Node * head;
-}List;
+} List;
 
-typedef struct ListPair_tag{
+typedef struct ListPair_tag {
 	List * TRUE;
 	List * FALSE;
 } ListPair;
@@ -112,7 +112,7 @@ typedef struct ListPair_tag{
 
 extern FILE *		iout;
 
-extern Quad			q[];
+extern Quad			*q;
 extern int			qprintStart;
 
 extern const Operand oR  ; 
@@ -128,6 +128,7 @@ extern const Operand oRESULT;
 
 void	printQuads	(void);
 void	optimize	(void);
+void	initIntermediate (void);
 
 void	genquad		(OperatorType op,Operand x,Operand y,Operand z);
 
@@ -136,11 +137,11 @@ List*	makelist	(int qnum);
 List*	merge		(List * l1,List * l2);
 void	backpatch	(List * l,int qnum);
 
-Operand	oS			(SymbolEntry *);		/* creates symbol operand */
-Operand	oL			(int quadLabel);		/* creates quad label operand */
-Operand oU			(const char *unitName); /* creates unit operand */
-Operand oD			(SymbolEntry *);		/* creates dereference [x] operand */ 	
-Operand oA			(SymbolEntry *);		/* creates address {x} operand */ 		
+Operand	oS			(SymbolEntry *);	/* creates symbol operand */
+Operand	oL			(int quadLabel);	/* creates quad label operand */
+Operand oU			(SymbolEntry *);	/* creates unit operand */
+Operand oD			(SymbolEntry *);	/* creates dereference [x] operand */ 	
+Operand oA			(SymbolEntry *);	/* creates address {x} operand */ 		
 
 ListPair	createCondition		(Operand place);
 Operand		evaluateCondition	(List * TRUE, List * FALSE);

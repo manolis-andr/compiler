@@ -1,12 +1,12 @@
 .PHONY: clean 
 
 #User-defined flags, that must be given as a command line argument
-FLAGS=
+UFLAGS=
 
 ## Flags that can be used:
 #	- DGC_FREE: ti define GC_FREE and avoid using garbage collector (no arrays and lists allowed then)
 
-CC=gcc
+CC=gcc 
 CFLAGS= $(UFLAGS)
 
 DEBUG?=0
@@ -40,19 +40,19 @@ lexer.c: lexer.l parser.h
 	flex -s -o $@ $<
 
 lexer.o: lexer.c $(DEPS) symbol.h intermediate.h
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -o $@ -c $<
 
 parser.o: parser.c $(DEPS) datastructs.h symbol.h intermediate.h final.h
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -o $@ -c $<
 
 intermediate.o: intermediate.c $(DEPS) symbol.h intermediate.h
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -o $@ -c $<
 
 final.o: final.c $(DEPS) symbol.h datastructs.h intermediate.h final.h
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -o $@ -c $<
 
 %.o: %.c %.h $(DEPS)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -o $@ -c $<
 
 
 ### Header file dependencies (from includes)
@@ -67,4 +67,3 @@ final.o: final.c $(DEPS) symbol.h datastructs.h intermediate.h final.h
 
 clean:
 	$(RM) lexer.c parser.c parser.output *.o *~ compiler 
-
