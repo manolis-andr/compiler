@@ -348,6 +348,7 @@ SymbolEntry * newConstant (const char * name, Type type, ...)
 			printf("%c",value.vChar);
 			break;
 		case TYPE_IARRAY:
+		case TYPE_ARRAY:
 			printf("%s",value.vString);
 		case TYPE_LIST:
 			printf("nil");

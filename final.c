@@ -373,7 +373,7 @@ void codel(char * label, char * command, char * a1, char * a2, bool colon)
 	code(command, a1, a2);
 }
 
-void codeq(Quad q)	{ fprintf(fout, ";;; %d: %s, %s, %s, %s\n", q.num, otos(q.op), q.x->name, q.y->name, q.z->name); }
+void codeq(Quad q)	{ fprintf(fout, ";;; %d: %s, %s, %s, %s\n", q.num, otostr(q.op), q.x->name, q.y->name, q.z->name); }
 
 
 /* -------------------------------------------------------------

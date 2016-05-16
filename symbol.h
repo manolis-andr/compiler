@@ -140,7 +140,7 @@ struct SymbolEntry_tag {
              PARDEF_DEFINE,                      /* Εν μέσω ορισμού    */
              PARDEF_CHECK                        /* Εν μέσω ελέγχου    */
          } pardef;
-         int           firstQuad;             /* Αρχική τετράδα        */
+         int            firstQuad;          /* Αρχική τετράδα        */
 		 int			posOffset;			//bytes allocated in stack for parameters, updated by endFunctionHeader()
 		 int			negOffset;			//bytes allocated in stack for variables and temporaries, updated before closeScope() of definitions
 		 int			serialNum;			//used for assembly numbering

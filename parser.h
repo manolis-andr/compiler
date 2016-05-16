@@ -87,7 +87,7 @@ extern int yydebug;
 typedef union YYSTYPE YYSTYPE;
 union YYSTYPE
 {
-#line 214 "parser.y" /* yacc.c:1909  */
+#line 216 "parser.y" /* yacc.c:1909  */
 
 	Type type;
 	const char * name;
@@ -111,14 +111,14 @@ union YYSTYPE
 		Type		type;
 		Operand		place;
 		bool		lval;
-	}atom;
+	} atom;
 	struct call_tag {
 		Type		type;
 		Operand		place;
-	}call;
+	} call;
 	struct stmt_tag {
 		List *			NEXT;
-	}stmt;
+	} stmt;
 
 #line 124 "parser.h" /* yacc.c:1909  */
 };

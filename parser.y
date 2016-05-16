@@ -24,8 +24,8 @@
 #ifndef INTERMEDIATE
 	#include "final.h"
 #else
-	void printFinal() { if(flag) fprintf(stderr, "Intermediate code only. Make-option INTERMEDIATE=1\n"); }
-	void skeletonBegin(const char * c, Queue q1, Queue q2) {;}
+	void printFinal() { fprintf(stderr, "Intermediate code only. Make-option used: INTERMEDIATE=1\n"); }
+	void skeletonBegin(Operand o, Queue q1, Queue q2) {;}
 	void skeletonEnd() {;}
 #endif
 
@@ -104,25 +104,25 @@ void printParQuads(callNode * n){
    ---------------------- Global Variables ---------------------
    ------------------------------------------------------------- */
 
-struct Memory mem;
+static struct Memory mem;
 
-Stack callStack;		//Stack of callNodes
-Stack ifStack;			//Stack of ifNodes
-Stack forStack;			//Stack of forNodes
-Stack funcStack;		//Stack of funcNodes
+static Stack	callStack;		//Stack of callNodes
+static Stack	ifStack;		//Stack of ifNodes
+static Stack	forStack;		//Stack of forNodes
+static Stack	funcStack;		//Stack of funcNodes
 
-Queue gcHungryFunc;			//Queue of Operands
-static Queue gcHungryVar;	//Queue of SymbolEntries (that will be used as Queue of list of SymbolEntries), only local to file
+static Queue	gcHungryFunc;	//Queue of Operands
+static Queue	gcHungryVar;	//Queue of SymbolEntries (that will be used as Queue of list of SymbolEntries)
 
-Operand		firstBlock  = NULL;
-bool		OFLAG		= false;
+static Operand	firstBlock  = NULL;
+static bool		OFLAG		= false;
 
 
 /* -------------------------------------------------------------
    ----------------- Library Function Declaration --------------
    ------------------------------------------------------------- */
 
-/* For #definitions for library function declaration module parameters look at general.h */
+/* For number of definitions for library function declaration module parameters look at general.h */
 
 /* struct to represent a pramater of a library function */
 typedef struct LibFuncParam_tag {
@@ -144,21 +144,23 @@ typedef struct LibFunc_tag{
 void declareLF(LibFunc lf)
 {
 	//excessive check for internal consistency
-	if(lookupEntry(lf.name,LOOKUP_ALL_SCOPES,false)!=NULL) internal("LibFunc: run-time library function %s duplicate definition",lf.name);
+	if (lookupEntry(lf.name,LOOKUP_ALL_SCOPES,false)) 
+		internal("LibFunc: run-time library function %s duplicate definition",lf.name);
 	SymbolEntry * func = newFunction(lf.name);
 	forwardFunction(func);
 	openScope();
 	currentScope->returnType = lf.returnType;
-	//func->u.eFunction.firstQuad=??
 	int i;
-	for(i=0;i<lf.paramNum;i++){
-		LibFuncParam * p = &lf.paramList[i];
+	for (i = 0; i < lf.paramNum; i++){
+		LibFuncParam *p = &lf.paramList[i];
 		//excessive cheks for internal consistency
-		if(p==NULL) internal("LibFunc: run-time library function %s expects more parameters",lf.name);
-		if(lookupEntry(p->name,LOOKUP_CURRENT_SCOPE,false)!=NULL) internal("LibFunc: run-time library function %s has duplicate parameter %s",lf.name,p->name);
-		newParameter(p->name,p->type,p->passMode,func);
+		if (!p) 
+			internal("LibFunc: run-time library function %s expects more parameters", lf.name);
+		if(lookupEntry(p->name,LOOKUP_CURRENT_SCOPE, false)) 
+			internal("LibFunc: run-time library function %s has duplicate parameter %s", lf.name, p->name);
+		newParameter(p->name, p->type, p->passMode, func);
 	}
-	endFunctionHeader(func,lf.returnType);
+	endFunctionHeader(func, lf.returnType);
 	func->u.eFunction.gcHungry = lf.gcHungry;
 	closeScope();
 }
@@ -204,7 +206,7 @@ void declareAllLibFunc()
 	};
 
 	int i;
-	for(i=0;i<LF_NUM;i++)
+	for (i = 0 ; i < LF_NUM; i++)
 		declareLF(libraryFunctions[i]);
 }
 
@@ -234,14 +236,14 @@ void declareAllLibFunc()
 		Type		type;
 		Operand		place;
 		bool		lval;
-	}atom;
+	} atom;
 	struct call_tag {
 		Type		type;
 		Operand		place;
-	}call;
+	} call;
 	struct stmt_tag {
 		List *			NEXT;
-	}stmt;
+	} stmt;
 }
 
 %token T_and	"and"
@@ -312,7 +314,7 @@ void declareAllLibFunc()
 
 program		: { openScope(); declareAllLibFunc(); } 
 			  func_def 
-			  { skeletonBegin(firstBlock, gcHungryFunc, gcHungryVar); printFinal(); skeletonEnd(); closeScope();}
+			  { printQuads(); skeletonBegin(firstBlock, gcHungryFunc, gcHungryVar); printFinal(); skeletonEnd(); closeScope();}
 
 /* -------------------------------------------------------------------------------------------------------------------------------- 
  *	BLOCK DEFINITION (FUNCTIONS)
@@ -328,7 +330,6 @@ func_def	: "def"	{mem.forward=0;} header ':'	{if(firstBlock==NULL)
 												 SymbolEntry *s = n->symbol;
 												 genquad(O_ENDU,oU(s),o_,o_);
 												 if(OFLAG) optimize();
-												 printQuads();
 												 s->u.eFunction.negOffset = currentScope->negOffset;
 												 #ifndef GC_FREE
 												 s->u.eFunction.gcHungry  = currentScope->gcHungry;
@@ -365,7 +366,7 @@ header		: type T_id		{	mem.func = newFunction($2);
 								#endif
 								currentScope->returnType = $1;
 							} 
-			  '(' formal_list ')' {endFunctionHeader(mem.func,$1); $$=$2; mem.func->u.eFunction.firstQuad=quadNext;}
+			  '(' formal_list ')' { endFunctionHeader(mem.func,$1); $$=$2; }
 			| T_id			{	mem.func = newFunction($1); 
 								push(funcStack);	
 								funcNode *n = top(funcStack);
@@ -378,7 +379,7 @@ header		: type T_id		{	mem.func = newFunction($2);
 								#endif
 								currentScope->returnType = typeVoid;
 							} 
-			  '(' formal_list ')' {endFunctionHeader(mem.func,typeVoid); $$=$1; mem.func->u.eFunction.firstQuad=quadNext;}	
+			  '(' formal_list ')' { endFunctionHeader(mem.func,typeVoid); $$=$1; }	
 			;
 
 formal_list	: formal formal_full | /* nothing */;
@@ -506,17 +507,17 @@ else_clause	: "else" ':'		{ifNode *n = top(ifStack);			backpatch(n->lastFalse,qu
 /* ------------- */
 
 
-/* all simple commands have NEXT=emptylist() so w do not bother assigning NEXT attribute to simple or simple lists*/
+/* all simple commands have NEXT=emptylist() so we do not bother assigning NEXT attribute to simple or simple lists */
 
 simple		: "skip"			
 								 /* atom is l-value && expr.type=atom.type */
-			| atom ":=" expr	{if(!$1.lval) sserror("expression in the left of asssigment is not an lvalue as it should be");
-								 if(!equalType($1.type,$3.type))	
+			| atom ":=" expr	{ if (!$1.lval) sserror("expression in the left of asssigment is not an lvalue as it should be");
+								  if (!equalType($1.type,$3.type))	
 									 sserror("type mismatch in assigment: left expr is %s while right is %s",typeToStr($1.type),typeToStr($3.type));
-								 if($3.cond) $3.place = evaluateCondition($3.TRUE,$3.FALSE);
-								 genquad(O_ASSIGN,$3.place,o_,$1.place);
+								  if ($3.cond) $3.place = evaluateCondition($3.TRUE,$3.FALSE);
+								  genquad(O_ASSIGN,$3.place,o_,$1.place);
 								}  
-			| call				
+			| call				{ if(!equalType($1.type,typeVoid)) sserror("non-void function cannot be called as a command\n"); }
 			;
 
 simple_list	: simple simple_full 
@@ -538,7 +539,7 @@ call		: T_id '('			{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 								 /* Garbage Collection info gathering. If function called is gcHungry, scope calls implicitly garbage collector.
 								  * If function called is a foward declaration, we pessimistically assume that it will call garbage collector.
 								  * This assumption is being made for sipmlicity and library functions are EXCLUDED from it since none is gc hungry */
-								 if(s->u.eFunction.gcHungry || (!isLibFunc(s) && s->u.eFunction.isForward)) currentScope->gcHungry=true;
+								 if(s->u.eFunction.gcHungry || (!isLibFunc(s) && s->u.eFunction.isForward)) currentScope->gcHungry = true;
 								 #endif
 								 push(callStack);
 								 callNode * n = top(callStack);
@@ -669,10 +670,6 @@ atom		: T_id				{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 								 SymbolEntry * s = newConstant($1,$$.type,$1);
 								 $$.place=oS(s);
 								 $$.lval=false; 
-								 /* Attention: 
-								  * Although we consider for strings: l-value to be true, strings cannot be in the left part of an assigment
-								  * We consider them to be lval, so that if they are used as function arguments, they will be ALLOWED to pass 
-								  * by reference. In assigment we perform an extra check to exclude strings from being assigned */
 								}
 			| call				{$$.type=$1.type;
 								 $$.place=$$.place;
@@ -866,8 +863,8 @@ rval:		  T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,type
 			| "true"			{$$.type=typeBoolean;	$$.place=oS(newConstant("true",typeBoolean,true));	$$.cond=false;}
 			| "false"			{$$.type=typeBoolean;	$$.place=oS(newConstant("false",typeBoolean,false));$$.cond=false;}
 
-			| "new" type '[' expr ']'	{if(!equalType($4.type,typeInteger))  
-											sserror("array size must be integer whereas expression in brackets is %s",typeToStr($4.type));
+			| "new" type '[' expr ']'	{if (!equalType($4.type,typeInteger))  
+											sserror("array size must be integer whereas expression in brackets is %s", typeToStr($4.type));
 										 $$.type=typeIArray($2); 
 										 Operand w = oS(newTemporary(typeInteger));						//size of array in bytes
 										 Operand z = oS(newTemporary($$.type));							//place for result of newarrv
@@ -907,7 +904,7 @@ rval:		  T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,type
 										 $$.place=z;
 										 $$.cond=false;
 										 #ifndef GC_FREE
-										 currentScope->gcHungry=true; //Garbage collection info gathering. Consv and consp are implicit gc calls
+										 currentScope->gcHungry = true; //Garbage collection info gathering. Consv and consp are implicit gc calls
 										 Iterator i = newIterator(gcHungryFunc);
 										 bool found = false;
 										 while(iterHasNext(i)){
@@ -915,7 +912,7 @@ rval:		  T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,type
 											 if(!strcmp(func->id,f->name)) {found=true; break;}
 										 }
 										 if(!found)
-											addLastData(gcHungryFunc,oU(func)); //add consv or consp in the queue if they are not already there
+											addLastData(gcHungryFunc, oU(func)); //add consv or consp in the queue if they are not already there
 										 #endif
 										}
 
@@ -951,16 +948,6 @@ rval:		  T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,type
 										 $$.cond=false;
 										}
 			
-
-
-/* function call limitations 
- * 1. T_id name of the function exists in current scope
- * 2. types of arguments passed are of the same type
- * 3. if arguments are passed by reference, they must be valid l-values
- * /
-
-/* In each T_id allocation we must check if the specific T_id is uniqe = 1st time to be created. ONLY in T_id ALLOCAATION */
-
 
 /* =================================================================================================================================== */
 /* =================================================================================================================================== */
@@ -1026,7 +1013,7 @@ void parseArguments(int argc,char * argv[]){
 	else {
 		filename = argv[fileArg];
 		yyin = fopen(filename, "r"); //Open file and redirect yylex to it
-		if(yyin == NULL) 
+		if (yyin == NULL) 
 			fatal("filename %s is not valid. File cannot be found.", filename);
 	}
 

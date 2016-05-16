@@ -1,13 +1,13 @@
 .PHONY: clean 
 
 #User-defined flags, that must be given as a command line argument
-UFLAGS=
+FLAGS=
 
 ## Flags that can be used:
 #	- DGC_FREE: ti define GC_FREE and avoid using garbage collector (no arrays and lists allowed then)
 
 CC=gcc 
-CFLAGS= $(UFLAGS)
+CFLAGS= $(FLAGS)
 
 DEBUG?=0
 ifeq ($(DEBUG),1)
@@ -59,10 +59,10 @@ final.o: final.c $(DEPS) symbol.h datastructs.h intermediate.h final.h
 #1. error.o:	general.h error.h
 #2. general.o:	general.h error.h
 #4. lexer.o:	general.h error.h symbol.h intermediate.h
-#5. parser.o:	general.h error.h symbol.h intermediate.h final.h
+#5. parser.o:	general.h error.h symbol.h intermediate.h final.h datastructs.h
 #6. symbol.o:	general.h error.h symbol.h
 #7. interme.o:	general.h error.h symbol.h intermediate.h
-#8. final.o:	general.h error.h symbol.h intermediate.h final.h
+#8. final.o:	general.h error.h symbol.h intermediate.h final.h datastructs.h
 
 
 clean:

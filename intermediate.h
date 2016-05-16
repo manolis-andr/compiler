@@ -20,7 +20,10 @@
 
 #include "symbol.h"
 
-#define QUAD_ARRAY_SIZE 256		//initial num of quads supported in a tony function: QUAD_ARRAY_SIZE - 1
+/* initial num of quads supported in a tony programm: QUAD_ARRAY_SIZE - 1
+ * if there is need for more we use realloc to gain more 
+ */
+#define QUAD_ARRAY_SIZE 256		
 
 //checks if after optimization a quad remains present (active) and has not been deleted
 #define ISACTIVE(NUM) ((NUM)<0 ? false : true)
@@ -91,6 +94,8 @@ typedef struct Quad_tag {
 
 /* ----------------------- List ------------------------------ */
 
+/* Lists of quad numbers, that contain a * (oSTAR) and will be backpatched */ 
+
 typedef struct Node_tag {
 	int data;
 	struct Node_tag * next;
@@ -113,7 +118,6 @@ typedef struct ListPair_tag {
 extern FILE *		iout;
 
 extern Quad			*q;
-extern int			qprintStart;
 
 extern const Operand oR  ; 
 extern const Operand oV  ;
@@ -125,6 +129,8 @@ extern const Operand oRESULT;
 /* ---------------------------------------------------------------------
    --------------- Πρωτότυπα των βοηθητικών συναρτήσεων ----------------
    --------------------------------------------------------------------- */
+
+/* Interface to parser */
 
 void	printQuads	(void);
 void	optimize	(void);
@@ -146,10 +152,11 @@ Operand oA			(SymbolEntry *);	/* creates address {x} operand */
 ListPair	createCondition		(Operand place);
 Operand		evaluateCondition	(List * TRUE, List * FALSE);
 
-SymbolEntry *	getSymbol		(Operand o);
-const char *	otos			(OperatorType op);	/* returns the string representation of an OperatorType
-													 * caled in printing (pritQuads and printFinal) */
+/* Interface to final */
 
+SymbolEntry *	getSymbol		(Operand o);
+const char *	otostr			(OperatorType op);	/* returns the string representation of an OperatorType
+													 * caled in printing (pritQuads and printFinal) */
 #ifdef DEBUG
 void	printList	(List * l);
 #endif

@@ -34,11 +34,10 @@ FILE *iout = NULL;
  * buffer for quads and size of buffer. Initial size = QUAD_ARRAY_SIZE
  * max number of quads supported in a function = QUAD_ARRAY_SIZE - 1.
  * If a function needs more quads then we resize q with realloc
+ * Placement of quads starts from q[1] (so that offset==quad_num)
  */
 Quad *q;
 static int qSize;
-
-int  qprintStart = 1;
 
 static struct Operand_tag operandConst [] = {
 	    { OPERAND_PASSMODE,	"V",	NULL },
@@ -76,6 +75,7 @@ void genquad(OperatorType op,Operand x,Operand y,Operand z)
 	q[quadNext].z  = z;
 	quadNext++;
 	if (quadNext == qSize) {
+		fprintf(stderr, "quad limit reached\n");
 		qSize = 2 * qSize;
 		q = (Quad *) realloc(q, qSize * sizeof(Quad));	//double quad array size
 	}
@@ -85,11 +85,10 @@ void genquad(OperatorType op,Operand x,Operand y,Operand z)
 void printQuads()
 {
 	int i;
-	for(i=qprintStart;i<quadNext;i++){
-		if(ISACTIVE(q[i].num)) 
-			fprintf(iout,"%d: %s, %s, %s, %s\n",q[i].num,otos(q[i].op),q[i].x->name,q[i].y->name,q[i].z->name);
+	for (i = 1; i < quadNext; i++){
+		if (ISACTIVE(q[i].num)) 
+			fprintf(iout,"%d: %s, %s, %s, %s\n", q[i].num, otostr(q[i].op), q[i].x->name, q[i].y->name, q[i].z->name);
 	}
-	qprintStart=quadNext;
 }
 
 
@@ -196,15 +195,14 @@ Operand evaluateCondition(List * TRUE, List * FALSE)
 	1. inverse copy propagation
  	2. constant propagation 
 	3. algebraic transformations
-	4. boolean transformations
-	5. remove jumps to next instr
+	4. remove jumps to next instr
 */
 
 void opt_inverseCopyPropagation()
 {
 	int i;
-	//up to quadNext-1 because the quads that will be transformed always go in pairs
-	for (i = qprintStart; i < quadNext-1; i++){
+	//up to quadNext-2 because the quads that will be transformed always go in pairs
+	for (i = 1; i < quadNext-1; i++){
 		if (!ISACTIVE(q[i].num)) continue;
 		OperatorType op1 = q[i].op;
 		OperatorType op2 = q[i+1].op;
@@ -223,24 +221,24 @@ void opt_inverseCopyPropagation()
 void opt_constantFolding()
 {
 	int i;
-	for(i=qprintStart;i<quadNext;i++) {
-		if(!ISACTIVE(q[i].num)) continue;
+	for (i = 1; i < quadNext; i++) {
+		if (!ISACTIVE(q[i].num)) continue;
 		OperatorType op = q[i].op;
-		if( (op==O_ADD || op==O_SUB || op==O_MULT || op==O_DIV || op==O_MOD) && 
+		if ( (op==O_ADD || op==O_SUB || op==O_MULT || op==O_DIV || op==O_MOD) && 
 			(getSymbol(q[i].x)->entryType==ENTRY_CONSTANT && getSymbol(q[i].y)->entryType==ENTRY_CONSTANT))
 		{
 			int v1 = getSymbol(q[i].x)->u.eConstant.value.vInteger;
 			int v2 = getSymbol(q[i].y)->u.eConstant.value.vInteger;
 			int res;
-			switch(op){
-				case O_ADD: res=v1+v2; break;
-				case O_SUB:	res=v1-v2; break;
-				case O_MULT: res=v1*v2; break;
-				case O_DIV: res=v1/v2; break;
-				case O_MOD: res=v1%v2; break;
+			switch(op) {
+				case O_ADD:		res = v1 + v2;	break;
+				case O_SUB:		res = v1 - v2;	break;
+				case O_MULT:	res = v1 * v2;	break;
+				case O_DIV:		res = v1 / v2;	break;
+				case O_MOD:		res = v1 % v2;	break;
 			}
 			q[i].op = O_ASSIGN;
-			q[i].x = oS(newConstant(NULL,typeInteger,res));
+			q[i].x = oS(newConstant(NULL, typeInteger, res));
 			q[i].y = o_;
 		}
 	}
@@ -250,9 +248,9 @@ void opt_algebraicTransformations()
 {
 	int i;
 	SymbolEntry * s;
-	for(i=qprintStart;i<quadNext;i++){
+	for (i = 1 ; i < quadNext; i++){
 		if(!ISACTIVE(q[i].num)) continue;
-		if(q[i].op==O_ADD){
+		if(q[i].op==O_ADD) {
 			// 0 + x = x
 			s = getSymbol(q[i].x);
 			if(s->entryType==ENTRY_CONSTANT && s->u.eConstant.value.vInteger==0)
@@ -262,7 +260,7 @@ void opt_algebraicTransformations()
 			if(s->entryType==ENTRY_CONSTANT && s->u.eConstant.value.vInteger==0)
 				{ q[i].op=O_ASSIGN;	q[i].y=o_;					continue;	}
 		}
-		else if(q[i].op==O_MULT){
+		else if(q[i].op==O_MULT) {
 			// 0 * x = 0
 			s = getSymbol(q[i].x);
 			if(s->entryType==ENTRY_CONSTANT && s->u.eConstant.value.vInteger==0)
@@ -285,9 +283,9 @@ void opt_algebraicTransformations()
 void opt_oneStepJumps()
 {	
 	int i;
-	for(i=qprintStart;i<quadNext;i++){
-		if(!ISACTIVE(q[i].num)) continue;
-		if(q[i].op==O_JUMP && q[i].z->u.quadLabel==i+1) 
+	for (i = 1 ; i < quadNext; i++){
+		if (!ISACTIVE(q[i].num)) continue;
+		if (q[i].op==O_JUMP && q[i].z->u.quadLabel==i+1) 
 			q[i].num = -1;
 	}
 }
@@ -297,7 +295,6 @@ void optimize()
 	opt_inverseCopyPropagation(); //first, if constantFolding first, it will not work
 	opt_constantFolding();
 	opt_algebraicTransformations();
-	//opt_booleanTransformations();
 	opt_oneStepJumps();
 }
 
@@ -352,17 +349,6 @@ void backpatch(List *l,int qnum)
 	l->head=NULL; //list has been emptied
 }
 
-#ifdef DEBUG
-void printList(List *l){
-	Node * p = l->head;
-	if(p==NULL) printf("<empty>");
-	while(p!=NULL){
-		printf("%d ",p->data);
-		p=p->next;
-	}
-	printf("\n");
-}
-#endif
 
 /* -------------------------------------------------------------
    ------------------ Other Helper Functions -------------------
@@ -381,7 +367,7 @@ SymbolEntry * getSymbol(Operand o){
 }
 
 //operator to string - alternatively we can allocate an const char * array with those values
-const char * otos(OperatorType op)
+const char * otostr(OperatorType op)
 {
 	switch(op){
 		case O_ASSIGN:	return ":=";
@@ -408,3 +394,15 @@ const char * otos(OperatorType op)
 	}
 }
 
+
+#ifdef DEBUG
+void printList(List *l){
+	Node *p = l->head;
+	if (!p) printf("<empty>");
+	while(p){
+		printf("%d ", p->data);
+		p = p->next;
+	}
+	printf("\n");
+}
+#endif

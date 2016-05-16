@@ -59,6 +59,7 @@ extern const char * filename;
  * - STRINGS_MAX			max number of string literals in a program		final.c
  * - STRING_LABEL_BUF_SIZE	bytes for a string label, limits strings liter	final.c
  * - LABEL_BUF_SIZE			bytes for a label, limits quads and functions	final.c
+ * - SYMBOL_TABLE_SIZE		number of buckets of the hash Symbol Table		parser.c
  */
 
 /* Definitions/Flags imposed by Makefile:
