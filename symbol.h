@@ -70,7 +70,6 @@ struct Type_tag {
        TYPE_INTEGER,                     /* Ακέραιοι                  */
        TYPE_BOOLEAN,                     /* Λογικές τιμές             */
        TYPE_CHAR,                        /* Χαρακτήρες                */
-       TYPE_ARRAY,                       /* Πίνακες γνωστού μεγέθους  */
        TYPE_IARRAY,                      /* Πίνακες άγνωστου μεγέθους */
 	   TYPE_POINTER,					 /* Δείκτες					  */
 	   TYPE_LIST,
@@ -140,7 +139,6 @@ struct SymbolEntry_tag {
              PARDEF_DEFINE,                      /* Εν μέσω ορισμού    */
              PARDEF_CHECK                        /* Εν μέσω ελέγχου    */
          } pardef;
-         int            firstQuad;          /* Αρχική τετράδα        */
 		 int			posOffset;			//bytes allocated in stack for parameters, updated by endFunctionHeader()
 		 int			negOffset;			//bytes allocated in stack for variables and temporaries, updated before closeScope() of definitions
 		 int			serialNum;			//used for assembly numbering
@@ -226,7 +224,6 @@ void          destroyEntry       (SymbolEntry * e);
 SymbolEntry * lookupEntry        (const char * name, LookupType type,
                                   bool err);
 
-Type          typeArray          (RepInteger size, Type refType);
 Type          typeIArray         (Type refType);
 Type		  typePointer		 (Type refType);
 Type		  typeList			 (Type refType);

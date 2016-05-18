@@ -1,11 +1,11 @@
 /******************************************************************************
  
- *  C header file : intermediate.c
+ *  C code file   : intermediate.c
  *  Project       : Tony Compiler
  *  Version       : 1.0 alpha
  *  Written by    : Manolis	Androulidakis
- *  Date          : September 21, 2014
- *  Description   : Structures and helper routines for intermediate code
+ *  Date          : September 21, 2015
+ *  Description   : Intermediate code (quad generation and optimization)
  *
  *  ---------
  *  Εθνικό Μετσόβιο Πολυτεχνείο.
@@ -198,7 +198,7 @@ Operand evaluateCondition(List * TRUE, List * FALSE)
 	4. remove jumps to next instr
 */
 
-void opt_inverseCopyPropagation()
+static void opt_inverseCopyPropagation()
 {
 	int i;
 	//up to quadNext-2 because the quads that will be transformed always go in pairs
@@ -218,7 +218,7 @@ void opt_inverseCopyPropagation()
 	}
 }
 
-void opt_constantFolding()
+static void opt_constantFolding()
 {
 	int i;
 	for (i = 1; i < quadNext; i++) {
@@ -244,7 +244,7 @@ void opt_constantFolding()
 	}
 }
 
-void opt_algebraicTransformations()
+static void opt_algebraicTransformations()
 {
 	int i;
 	SymbolEntry * s;
@@ -280,7 +280,7 @@ void opt_algebraicTransformations()
 }
 
 //ommits jumps to the following quad (flow will get there anyway)
-void opt_oneStepJumps()
+static void opt_oneStepJumps()
 {	
 	int i;
 	for (i = 1 ; i < quadNext; i++){

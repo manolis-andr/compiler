@@ -1,4 +1,20 @@
 %{
+/******************************************************************************
+
+ *  Bison file	  : parser.y
+ *  Project       : Tony Compiler
+ *  Version       : 1.0 alpha
+ *  Written by    : Manolis Androulidakis
+ *  Date          : September 28, 2015
+ *  Description   : Pasing analysis and controlling component
+ *
+ *  ---------
+ *  Εθνικό Μετσόβιο Πολυτεχνείο.
+ *  Σχολή Ηλεκτρολόγων Μηχανικών και Μηχανικών Υπολογιστών.
+ *  Τομέας Τεχνολογίας Πληροφορικής και Υπολογιστών.
+ *  Εργαστήριο Τεχνολογίας Λογισμικού
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -173,14 +189,14 @@ void declareAllLibFunc()
 		
 		/* Internal */
 		/* name		returnType			argNum gcHungry  for each arg: name, type, passMode		 */
-		{ "newarrp",typeIArray(typeAny),	1, false, { {"size", typeInteger,			PASS_BY_VALUE}, } },
-		{ "newarrv",typeIArray(typeAny),	1, false, { {"size", typeInteger,			PASS_BY_VALUE}, } },
-		{ "consp",	typeList(typeAny),		2, true,  { {"head", typeInteger,			PASS_BY_VALUE}, 
-														{"tail", typePointer(typeAny),	PASS_BY_VALUE}, } },
-		{ "consv",	typeList(typeAny),		2, true,  { {"head", typeInteger,			PASS_BY_VALUE}, 
-														{"tail", typePointer(typeAny),	PASS_BY_VALUE}, } },
-		{ "head",	typeAny,				1, false, { {"l",	  typeList(typeAny),	PASS_BY_VALUE}, } },
-		{ "tail",	typeList(typeAny),		1, false, { {"l",	  typeList(typeAny),	PASS_BY_VALUE}, } },
+		{ "newarrp",typeIArray(typeAny),	1, true, { {"size", typeInteger,			PASS_BY_VALUE}, } },
+		{ "newarrv",typeIArray(typeAny),	1, true, { {"size", typeInteger,			PASS_BY_VALUE}, } },
+		{ "consp",	typeList(typeAny),		2, true, { {"head", typeInteger,			PASS_BY_VALUE}, 
+													   {"tail", typePointer(typeAny),	PASS_BY_VALUE}, } },
+		{ "consv",	typeList(typeAny),		2, true, { {"head", typeInteger,			PASS_BY_VALUE}, 
+													   {"tail", typePointer(typeAny),	PASS_BY_VALUE}, } },
+		{ "head",	typeAny,				1, true, { {"l",	  typeList(typeAny),	PASS_BY_VALUE}, } },
+		{ "tail",	typeList(typeAny),		1, true, { {"l",	  typeList(typeAny),	PASS_BY_VALUE}, } },
 
 		/* Callable */
 		/* name		returnType	argNum gcHungry  for each arg: name, type, passMode		 */
@@ -314,7 +330,10 @@ void declareAllLibFunc()
 
 program		: { openScope(); declareAllLibFunc(); } 
 			  func_def 
-			  { printQuads(); skeletonBegin(firstBlock, gcHungryFunc, gcHungryVar); printFinal(); skeletonEnd(); closeScope();}
+			  { printQuads(); 
+				if(OFLAG) optimize();
+				skeletonBegin(firstBlock, gcHungryFunc, gcHungryVar); printFinal(); skeletonEnd(); 
+				closeScope();}
 
 /* -------------------------------------------------------------------------------------------------------------------------------- 
  *	BLOCK DEFINITION (FUNCTIONS)
@@ -329,7 +348,7 @@ func_def	: "def"	{mem.forward=0;} header ':'	{if(firstBlock==NULL)
 												 funcNode *n = top(funcStack);	
 												 SymbolEntry *s = n->symbol;
 												 genquad(O_ENDU,oU(s),o_,o_);
-												 if(OFLAG) optimize();
+												 
 												 s->u.eFunction.negOffset = currentScope->negOffset;
 												 #ifndef GC_FREE
 												 s->u.eFunction.gcHungry  = currentScope->gcHungry;
@@ -352,9 +371,10 @@ def_list	: func_def def_list
 			| func_decl def_list	
 			| var_def def_list		
 			| /* nothing */
-			
+		
 			/* checks that T_id is uniquely defined in the current scope (not already in Symbol Table) inside newFunction */
 header		: type T_id		{	mem.func = newFunction($2);
+								if (!mem.func) ssmerror("function identifier is duplicate");
 								push(funcStack);	
 								funcNode *n = top(funcStack);
 								n->symbol = mem.func;
@@ -567,7 +587,7 @@ call		: T_id '('			{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
 								}
 			| T_id '(' ')'		{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
 								 if(s->entryType!=ENTRY_FUNCTION)		sserror("identifier is not a function");
-								 if(!isCallableFunc(s)) ssmerror("function is not callable"); //we assume that there are some non callable functions
+								 if(!isCallableFunc(s)) sserror("function is not callable"); //we assume that there are some non callable functions
 								 #ifndef GC_FREE
 								 /* Garbage Collection info gathering. If function called is gcHungry, scope calls implicitly garbage collector.
 								  * If function called is a foward declaration, we pessimistically assume that it will call garbage collector.
@@ -657,8 +677,8 @@ expr_full	:',' expr			{callNode * n = top(callStack);
 																									/* Attributes: type, place, lval */
 
 
-atom		: T_id				{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true); 
-								switch(s->entryType){
+atom		: T_id				{SymbolEntry *s = lookupEntry($1,LOOKUP_ALL_SCOPES,true);
+								switch (s->entryType) {
 									case(ENTRY_FUNCTION):	sserror("identifier is a function and is not called properly"); break;
 									case(ENTRY_VARIABLE):	$$.type=s->u.eVariable.type;	break;
 									case(ENTRY_PARAMETER):	$$.type=s->u.eParameter.type;	break;
@@ -884,6 +904,9 @@ rval:		  T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,type
 										 }
 										 $$.place=z;
 										 $$.cond=false;
+										 #ifndef GC_FREE
+										 currentScope->gcHungry = true; //Garbage collection info gathering. newarrp and newarrv are implicit gc calls
+										 #endif
 										}
 
 
@@ -930,22 +953,30 @@ rval:		  T_int_const		{$$.type=typeInteger;	$$.place = oS( newConstant(NULL,type
 			| "head" '(' expr ')'		{if(!equalType($3.type,typeList(typeAny))) 
 											sserror("expression in brackets must be some list type but is %s",typeToStr($3.type));
 										 $$.type=$3.type->refType;
+										 SymbolEntry *func = lookupEntry("head",LOOKUP_ALL_SCOPES,false);
 										 Operand z = oS(newTemporary($$.type));
 										 genquad(O_PAR,$3.place,oV,o_);
 										 genquad(O_PAR,z,oRET,o_);
-										 genquad(O_CALL,o_,o_,oU(lookupEntry("head",LOOKUP_ALL_SCOPES,false)));
+										 genquad(O_CALL,o_,o_,oU(func));
 										 $$.place=z;
 										 $$.cond=false;
+										 #ifndef GC_FREE
+										 currentScope->gcHungry = true; //Garbage collection info gathering. head is implicit gc call
+										 #endif
 										}
 
 			| "tail" '(' expr ')'		{if(!equalType($3.type,typeList(typeAny))) sserror("expression in brackets must be some list type");
 										 $$.type=$3.type;
+										 SymbolEntry *func = lookupEntry("tail",LOOKUP_ALL_SCOPES,false);
 										 Operand z = oS(newTemporary($$.type));
 										 genquad(O_PAR,$3.place,oV,o_);
 										 genquad(O_PAR,z,oRET,o_);
-										 genquad(O_CALL,o_,o_,oU(lookupEntry("tail",LOOKUP_ALL_SCOPES,false)));
+										 genquad(O_CALL,o_,o_,oU(func));
 										 $$.place=z;
 										 $$.cond=false;
+										 #ifndef GC_FREE
+										 currentScope->gcHungry = true; //Garbage collection info gathering. tail is implicit gc call
+										 #endif
 										}
 			
 

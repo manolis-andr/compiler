@@ -277,7 +277,6 @@ SymbolEntry * newConstant (const char * name, Type type, ...)
             value.vChar = va_arg(ap, int);        /* RepChar is promoted */
             break;
 		case TYPE_IARRAY:
-        case TYPE_ARRAY:
             if (equalType(type->refType, typeChar)) {
                 RepString str = va_arg(ap, RepString);
                 
@@ -312,7 +311,7 @@ SymbolEntry * newConstant (const char * name, Type type, ...)
                 strAppendChar(buffer, value.vChar);
                 strcat(buffer, "'");
                 break;
-            case TYPE_ARRAY:
+            case TYPE_IARRAY:
                 strcpy(buffer, "\"");
                 strAppendString(buffer, value.vString);
                 strcat(buffer, "\"");           
@@ -348,7 +347,6 @@ SymbolEntry * newConstant (const char * name, Type type, ...)
 			printf("%c",value.vChar);
 			break;
 		case TYPE_IARRAY:
-		case TYPE_ARRAY:
 			printf("%s",value.vString);
 		case TYPE_LIST:
 			printf("nil");
@@ -370,7 +368,6 @@ SymbolEntry * newConstant (const char * name, Type type, ...)
             case TYPE_CHAR:
                 e->u.eConstant.value.vChar = value.vChar;
                 break;
-            case TYPE_ARRAY:
 			case TYPE_IARRAY:
                 e->u.eConstant.value.vString = value.vString;
 				break;
@@ -546,7 +543,7 @@ void destroyEntry (SymbolEntry * e)
             destroyType(e->u.eVariable.type);
             break;
         case ENTRY_CONSTANT:
-            if (e->u.eConstant.type->kind == TYPE_ARRAY)
+            if (e->u.eConstant.type->kind == TYPE_IARRAY)
                 delete((char *) (e->u.eConstant.value.vString));
             destroyType(e->u.eConstant.type);
             break;
@@ -602,20 +599,6 @@ SymbolEntry * lookupEntry (const char * name, LookupType type, bool err)
     return NULL;
 }
 
-Type typeArray (RepInteger size, Type refType)
-{
-    Type n = (Type) new(sizeof(struct Type_tag));
-
-    n->kind     = TYPE_ARRAY;
-    n->refType  = refType;
-    n->size     = size;
-    n->refCount = 1;
-    
-    refType->refCount++;
-
-    return n;
-}
-
 Type typeIArray (Type refType)
 {
     Type n = (Type) new(sizeof(struct Type_tag));
@@ -659,7 +642,6 @@ Type typeList (Type refType)
 void destroyType (Type type)
 {
     switch (type->kind) {
-        case TYPE_ARRAY:
         case TYPE_IARRAY:
 			;
     }
@@ -680,8 +662,6 @@ unsigned int sizeOfType (Type type)
         case TYPE_BOOLEAN:
         case TYPE_CHAR:
             return 1;
-        case TYPE_ARRAY:
-            return type->size * sizeOfType(type->refType);
     }
     return 0;
 }
@@ -697,11 +677,6 @@ bool equalType (Type type1, Type type2)
     if (type1->kind != type2->kind)
         return false;
     switch (type1->kind) {
-        case TYPE_ARRAY:
-            if (type1->size != type2->size)
-                return false;
-			else
-				return equalType(type1->refType,type2->refType);
         case TYPE_IARRAY:
 			return equalType(type1->refType,type2->refType);
 		case TYPE_POINTER:
@@ -731,10 +706,6 @@ void printType (Type type)
             break;
         case TYPE_CHAR:
             printf("char");
-            break;
-        case TYPE_ARRAY:
-            printf("array [%d] of ", type->size);
-            printType(type->refType);
             break;
         case TYPE_IARRAY:
             printf("array of ");
@@ -800,10 +771,6 @@ const char * typeToStr (Type type)
             break;
         case TYPE_CHAR:
             return "char";
-            break;
-        case TYPE_ARRAY:
-			sprintf(buf,"array [%d] of %s",type->size,typeToStr(type->refType));
-			return strdup(buf);
             break;
         case TYPE_IARRAY:
 			sprintf(buf,"array of %s",typeToStr(type->refType));

@@ -1,10 +1,10 @@
 /******************************************************************************
  
- *  C header file : final.c
+ *  C code file	  : final.c
  *  Project       : Tony Compiler
  *  Version       : 1.0 alpha
  *  Written by    : Manolis	Androulidakis
- *  Date          : September 28, 2014
+ *  Date          : September 28, 2015
  *  Description   : Final code generation
  *
  *  ---------
@@ -51,19 +51,19 @@ int		fixChar			(char *, int * shift);
    -------------- Internal Function Declaration ----------------
    ------------------------------------------------------------- */
 
-static void	code			(char * command, char * a1, char * a2);								//print an assembly command 
-static void	codel			(char * label, char * command, char * a1, char * a2, bool colon);	//print labels in front
-static void	codeq			(Quad q);															//print in commented format the original quad
+static void		code			(char * command, char * a1, char * a2);								//print an assembly command 
+static void		codel			(char * label, char * command, char * a1, char * a2, bool colon);	//print labels in front
+static void		codeq			(Quad q);															//print in commented format the original quad
 
-static void    load            (char * reg, Operand o);
-static void    loadAddr        (char * reg, Operand o);
-static void    store           (char * reg, Operand o);
-static void    getAR           (SymbolEntry * s);
-static void    updateAL        (SymbolEntry * s);
+static void		load			(char * reg, Operand o);
+static void		loadAddr		(char * reg, Operand o);
+static void		store			(char * reg, Operand o);
+static void		getAR			(SymbolEntry * s);
+static void		updateAL		(SymbolEntry * s);
 
-static char *  name            (Operand o);
-static char *  endof           (Operand o);
-static char *  label           (Operand o);
+static char *	name			(Operand o);
+static char *	endof			(Operand o);
+static char *	label			(Operand o);
 
 static void		printConditional(char * instr, Quad q);
 
@@ -84,23 +84,21 @@ static int		refTypeSize		(Operand o);
    ---------------------- Global variables ---------------------
    ------------------------------------------------------------- */
 
-static Queue gcHungryVar;		//Queue only for this file
-
 FILE *fout = NULL;
-int	fprintStart = 1;
 
-char *	extrn[LF_NUM];
-int		extrnNum = 0;
+static char *	extrn[LF_NUM];
+static int		extrnNum = 0;
 
-Queue	strings;		//Queue of char *, that holds strings of program
-int		stringsNum = 0;
+static Queue	strings;			//Queue of char *, that holds strings of program
+static int		stringsNum = 0;
 
-Operand currentUnit;	//the unit whose final code is generated, useful for jumps
-int		currentNestingLevel;
+static Operand	currentUnit;		//the unit whose final code is generated, useful for jumps
+static int		currentNestingLevel;
 
 #ifndef GC_FREE
-int		gcCallNum = 1; //number of gc calls in a function
-Queue	gcCallParam;
+static int		gcCallNum = 1;		//number of gc calls in a function
+static Queue	gcCallParam;
+static Queue	gcHungryVar;		//Queue only for this file
 #endif
 
 /* -------------------------------------------------------------
@@ -118,10 +116,10 @@ void initFinal()
 void printFinal() 
 {
 	int i;
-	for (i = fprintStart; i < quadNext; i++)
+	for (i = 1; i < quadNext; i++)
 	{
 		Quad qd = q[i];
-		if (qd.num < 0) 
+		if (!ISACTIVE(qd.num)) 
 			continue; //quad has been removed by optimizer
 		Operand x = qd.x;
 		Operand y = qd.y;
@@ -266,7 +264,6 @@ void printFinal()
 				internal("final: printFinal(): unhandled Operator case");
 		}
 	}
-	fprintStart = quadNext;
 }
 
 
@@ -899,10 +896,4 @@ int refTypeSize(Operand o)
 		return sizeOfType(type->refType);
 	}
 }
-
-
-
-
-
-
 
